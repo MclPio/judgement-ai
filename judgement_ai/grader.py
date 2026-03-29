@@ -6,13 +6,15 @@ import json
 import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import requests
 
 from judgement_ai.fetcher import SearchResult
+from judgement_ai.models import GradeResult
+from judgement_ai.output import JsonResultsWriter, QuepidCsvWriter
 from judgement_ai.prompts import (
     DEFAULT_SCALE_LABELS,
     build_prompt,
@@ -20,20 +22,9 @@ from judgement_ai.prompts import (
     validate_prompt_template,
     validate_scale_labels,
 )
+from judgement_ai.resume import load_completed_pairs
 
 SCORE_PATTERN = re.compile(r"^SCORE:\s*(-?\d+)\s*$", re.MULTILINE)
-
-
-@dataclass(slots=True)
-class GradeResult:
-    """A graded query/document pair."""
-
-    query: str
-    doc_id: str
-    score: int
-    reasoning: str
-    rank: int
-    pass_scores: list[int] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -109,16 +100,25 @@ class Grader:
         queries: list[str],
         resume_from: str | None = None,
         failed_log_path: str | Path | None = "failed.json",
+        output_path: str | Path | None = None,
+        output_format: str | None = None,
     ) -> list[GradeResult]:
         """Fetch and grade all results for the provided queries."""
-        del resume_from
         self.last_failures = []
-        self.last_summary = {"successes": 0, "failures": 0}
+        self.last_summary = {"successes": 0, "failures": 0, "skipped": 0}
+
+        completed_pairs = load_completed_pairs(resume_from) if resume_from else set()
+        writer = self._build_output_writer(output_path=output_path, output_format=output_format)
 
         query_order = {query: index for index, query in enumerate(queries)}
         tasks: list[tuple[str, SearchResult]] = []
+        skipped = 0
         for query in queries:
-            tasks.extend((query, item) for item in self.fetcher.fetch(query))
+            for item in self.fetcher.fetch(query):
+                if (query, item.doc_id) in completed_pairs:
+                    skipped += 1
+                    continue
+                tasks.append((query, item))
 
         graded_results: list[GradeResult] = []
         failures: list[GradeFailure] = []
@@ -133,6 +133,8 @@ class Grader:
                     failures.append(result)
                 else:
                     graded_results.append(result)
+                    if writer is not None:
+                        writer.append(result)
 
         graded_results.sort(key=lambda item: (query_order[item.query], item.rank, item.doc_id))
         failures.sort(key=lambda item: (query_order[item.query], item.rank, item.doc_id))
@@ -141,12 +143,29 @@ class Grader:
         self.last_summary = {
             "successes": len(graded_results),
             "failures": len(failures),
+            "skipped": skipped,
         }
 
         if failed_log_path is not None and failures:
             self._write_failures(failures, failed_log_path)
 
         return graded_results
+
+    def _build_output_writer(
+        self,
+        *,
+        output_path: str | Path | None,
+        output_format: str | None,
+    ) -> JsonResultsWriter | QuepidCsvWriter | None:
+        """Create an incremental output writer when configured."""
+        if output_path is None:
+            return None
+
+        if output_format == "json":
+            return JsonResultsWriter(output_path)
+        if output_format == "quepid_csv":
+            return QuepidCsvWriter(output_path)
+        raise ValueError("output_format must be one of: 'json', 'quepid_csv', or None.")
 
     def _grade_result(self, *, query: str, item: SearchResult) -> GradeResult | GradeFailure:
         """Grade a single fetched result with retries."""

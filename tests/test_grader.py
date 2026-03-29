@@ -139,7 +139,7 @@ def test_grade_returns_scored_results(monkeypatch) -> None:
 
     assert [item.doc_id for item in results] == ["456", "123"]
     assert [item.score for item in results] == [2, 3]
-    assert grader.last_summary == {"successes": 2, "failures": 0}
+    assert grader.last_summary == {"successes": 2, "failures": 0, "skipped": 0}
 
 
 def test_grade_retries_failures_logs_failed_items_and_continues(monkeypatch, tmp_path) -> None:
@@ -175,7 +175,7 @@ def test_grade_retries_failures_logs_failed_items_and_continues(monkeypatch, tmp
     )
 
     assert [item.doc_id for item in results] == ["good"]
-    assert grader.last_summary == {"successes": 1, "failures": 1}
+    assert grader.last_summary == {"successes": 1, "failures": 1, "skipped": 0}
 
     payload = json.loads(failed_log_path.read_text(encoding="utf-8"))
     assert payload[0]["doc_id"] == "bad"
@@ -203,3 +203,97 @@ def test_grade_collects_pass_scores(monkeypatch) -> None:
 
     assert results[0].score == 3
     assert results[0].pass_scores == [3, 2, 3]
+
+
+def test_grade_skips_completed_pairs_when_resuming(monkeypatch, tmp_path) -> None:
+    resume_path = tmp_path / "judgments.json"
+    resume_path.write_text(
+        json.dumps(
+            [
+                {
+                    "query": "vitamin b6",
+                    "doc_id": "123",
+                    "score": 3,
+                    "reasoning": "Already done.",
+                    "rank": 1,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    calls = {"count": 0}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        calls["count"] += 1
+        return DummyResponse(
+            {"choices": [{"message": {"content": "Needs grading.\nSCORE: 2"}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    fetcher = StaticFetcher(
+        {
+            "vitamin b6": [
+                SearchResult(doc_id="123", rank=1, fields={"title": "Done already"}),
+                SearchResult(doc_id="456", rank=2, fields={"title": "New item"}),
+            ]
+        }
+    )
+    grader = make_grader(fetcher=fetcher)
+
+    results = grader.grade(
+        queries=["vitamin b6"],
+        resume_from=resume_path,
+        failed_log_path=None,
+    )
+
+    assert calls["count"] == 1
+    assert [item.doc_id for item in results] == ["456"]
+    assert grader.last_summary == {"successes": 1, "failures": 0, "skipped": 1}
+
+
+def test_grade_writes_incremental_json_output(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "judgments.json"
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        return DummyResponse(
+            {"choices": [{"message": {"content": "Direct match.\nSCORE: 3"}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = make_grader()
+    grader.grade(
+        queries=["vitamin b6"],
+        output_path=output_path,
+        output_format="json",
+        failed_log_path=None,
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload[0]["doc_id"] == "123"
+
+
+def test_grade_writes_incremental_csv_output(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "judgments.csv"
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        return DummyResponse(
+            {"choices": [{"message": {"content": "Direct match.\nSCORE: 3"}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = make_grader()
+    grader.grade(
+        queries=["vitamin b6"],
+        output_path=output_path,
+        output_format="quepid_csv",
+        failed_log_path=None,
+    )
+
+    assert "query,docid,rating" in output_path.read_text(encoding="utf-8")
