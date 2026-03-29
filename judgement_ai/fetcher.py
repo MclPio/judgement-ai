@@ -1,4 +1,4 @@
-"""Search result fetcher interfaces and placeholders."""
+"""Search result fetchers and normalization helpers."""
 
 from __future__ import annotations
 
@@ -19,6 +19,23 @@ class SearchResult:
     fields: dict[str, Any]
 
 
+def normalize_result(item: dict[str, Any], *, default_rank: int) -> SearchResult:
+    """Convert an input record into the shared SearchResult shape."""
+    if "doc_id" not in item:
+        raise ValueError("Each result item must include a 'doc_id'.")
+
+    fields = item.get("fields", {})
+    if not isinstance(fields, dict):
+        raise ValueError("'fields' must be an object when provided.")
+
+    rank = item.get("rank", default_rank)
+    return SearchResult(
+        doc_id=str(item["doc_id"]),
+        rank=int(rank),
+        fields=fields,
+    )
+
+
 class ElasticsearchFetcher:
     """Fetch top-N results from an Elasticsearch endpoint."""
 
@@ -29,19 +46,27 @@ class ElasticsearchFetcher:
 
     def fetch(self, query: str) -> list[SearchResult]:
         """Fetch results for a query from Elasticsearch."""
-        response = requests.get(
-            f"{self.url}/_search",
-            params={"size": self.top_n, "q": query},
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
+        try:
+            response = requests.get(
+                f"{self.url}/_search",
+                params={"size": self.top_n, "q": query},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except (requests.RequestException, OSError, RuntimeError) as exc:
+            msg = f"Failed to fetch results from Elasticsearch for query {query!r}: {exc}"
+            raise RuntimeError(msg) from exc
+
         payload = response.json()
         hits = payload.get("hits", {}).get("hits", [])
         return [
-            SearchResult(
-                doc_id=str(hit.get("_id", "")),
-                rank=index,
-                fields=hit.get("_source", {}),
+            normalize_result(
+                {
+                    "doc_id": hit.get("_id", ""),
+                    "rank": index,
+                    "fields": hit.get("_source", {}),
+                },
+                default_rank=index,
             )
             for index, hit in enumerate(hits, start=1)
         ]
@@ -52,18 +77,42 @@ class FileResultsFetcher:
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        self._payload: dict[str, list[dict[str, Any]]] | None = None
 
     def fetch(self, query: str) -> list[SearchResult]:
         """Return results matching the given query from the input file."""
+        payload = self._load_payload()
+        items = payload.get(query, [])
+        return [
+            normalize_result(item, default_rank=index)
+            for index, item in enumerate(items, start=1)
+        ]
+
+    def _load_payload(self) -> dict[str, list[dict[str, Any]]]:
+        """Load and validate the input payload once."""
+        if self._payload is not None:
+            return self._payload
+
         with self.path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
 
-        items = payload.get(query, [])
-        return [
-            SearchResult(
-                doc_id=str(item["doc_id"]),
-                rank=int(item.get("rank", index)),
-                fields=item.get("fields", {}),
+        if not isinstance(payload, dict):
+            raise ValueError(
+                "Results file must be a JSON object that maps each query to a list of results."
             )
-            for index, item in enumerate(items, start=1)
-        ]
+
+        for query, items in payload.items():
+            if not isinstance(query, str):
+                raise ValueError("Results file query keys must be strings.")
+            if not isinstance(items, list):
+                raise ValueError(
+                    f"Results for query {query!r} must be a list of result objects."
+                )
+            for item in items:
+                if not isinstance(item, dict):
+                    raise ValueError(
+                        f"Each result for query {query!r} must be a JSON object."
+                    )
+
+        self._payload = payload
+        return payload

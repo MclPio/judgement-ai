@@ -2,6 +2,13 @@
 
 from judgement_ai import FileResultsFetcher, Grader
 
+# results.json shape:
+# {
+#   "vitamin b6": [
+#     {"doc_id": "123", "rank": 1, "fields": {"title": "Vitamin B6 100mg"}}
+#   ]
+# }
+#
 fetcher = FileResultsFetcher(path="results.json")
 grader = Grader(
     fetcher=fetcher,
@@ -11,4 +18,3 @@ grader = Grader(
 )
 
 print(grader.grade(queries=["vitamin b6", "tired all the time"]))
-
