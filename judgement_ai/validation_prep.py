@@ -66,8 +66,11 @@ def print_summary(
 
 
 def load_esci_rows(path: str | Path) -> list[dict[str, str]]:
-    """Load Amazon ESCI source rows from CSV or JSONL."""
+    """Load Amazon ESCI source rows from raw or pre-flattened inputs."""
     input_path = Path(path)
+    if input_path.is_dir():
+        return _load_esci_directory(input_path)
+
     suffix = input_path.suffix.lower()
 
     if suffix == ".csv":
@@ -87,7 +90,117 @@ def load_esci_rows(path: str | Path) -> list[dict[str, str]]:
                 rows.append({str(key): _stringify(value) for key, value in item.items()})
         return rows
 
-    raise ValueError("Amazon ESCI input must be a .csv or .jsonl file.")
+    if suffix == ".parquet":
+        return _load_esci_parquet(input_path)
+
+    raise ValueError("Amazon ESCI input must be a directory, .csv, .jsonl, or .parquet file.")
+
+
+def _load_esci_directory(directory: Path) -> list[dict[str, str]]:
+    examples = _find_first_existing(
+        directory,
+        [
+            "shopping_queries_dataset_examples.parquet",
+            "shopping_queries_dataset_examples.csv",
+            "shopping_queries_dataset_examples.jsonl",
+        ],
+    )
+    products = _find_first_existing(
+        directory,
+        [
+            "shopping_queries_dataset_products.parquet",
+            "shopping_queries_dataset_products.csv",
+            "shopping_queries_dataset_products.jsonl",
+        ],
+    )
+    if examples is None or products is None:
+        raise ValueError(
+            "ESCI directory input must contain shopping_queries_dataset_examples "
+            "and shopping_queries_dataset_products in parquet, csv, or jsonl form."
+        )
+    return _merge_esci_examples_and_products(examples, products)
+
+
+def _load_esci_parquet(path: Path) -> list[dict[str, str]]:
+    if "examples" in path.name:
+        sibling = path.with_name(path.name.replace("examples", "products"))
+        if sibling.exists():
+            return _merge_esci_examples_and_products(path, sibling)
+    return _read_tabular_rows(path)
+
+
+def _merge_esci_examples_and_products(
+    examples_path: Path,
+    products_path: Path,
+) -> list[dict[str, str]]:
+    example_rows = _read_tabular_rows(examples_path)
+    product_rows = _read_tabular_rows(products_path)
+
+    product_lookup: dict[tuple[str, str], dict[str, str]] = {}
+    for row in product_rows:
+        product_id = row.get("product_id", "").strip()
+        locale = row.get("product_locale", "").strip()
+        if product_id:
+            product_lookup[(locale, product_id)] = row
+
+    merged: list[dict[str, str]] = []
+    for row in example_rows:
+        product_id = row.get("product_id", "").strip()
+        locale = row.get("product_locale", "").strip()
+        if not product_id:
+            continue
+        product = product_lookup.get((locale, product_id))
+        if product is None:
+            raise ValueError(
+                "Could not resolve ESCI product metadata for "
+                f"product_id={product_id!r} locale={locale!r}."
+            )
+        combined = dict(row)
+        for key, value in product.items():
+            combined.setdefault(key, value)
+        merged.append(combined)
+    return merged
+
+
+def _read_tabular_rows(path: Path) -> list[dict[str, str]]:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            return list(csv.DictReader(handle))
+    if suffix == ".jsonl":
+        rows: list[dict[str, str]] = []
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                item = json.loads(line)
+                if not isinstance(item, dict):
+                    raise ValueError("Each JSONL line must decode to an object.")
+                rows.append({str(key): _stringify(value) for key, value in item.items()})
+        return rows
+    if suffix == ".parquet":
+        try:
+            import pandas as pd
+        except ImportError as exc:  # pragma: no cover - exercised manually
+            raise ValueError(
+                "Reading ESCI parquet files requires pandas and pyarrow. "
+                "Install with `pip install -e \".[validate]\"`."
+            ) from exc
+        frame = pd.read_parquet(path)
+        return [
+            {str(key): _stringify(value) for key, value in record.items()}
+            for record in frame.to_dict(orient="records")
+        ]
+    raise ValueError(f"Unsupported ESCI tabular format: {path.suffix}")
+
+
+def _find_first_existing(directory: Path, names: list[str]) -> Path | None:
+    for name in names:
+        candidate = directory / name
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _stringify(value: object) -> str:

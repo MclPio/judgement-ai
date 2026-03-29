@@ -103,16 +103,23 @@ This script uses `msmarco-passage/trec-dl-2019/judged` by default and writes the
 
 ### 1b. Build the product-search subset
 
-Prepare an Amazon ESCI source file in either `.csv` or `.jsonl` form, then run:
+Point the script at the raw Amazon ESCI dataset directory or an examples parquet file, then run:
 
 ```bash
 .venv/bin/python validate/prepare_trec_product_search.py \
-  --input path/to/esci_source.csv \
+  --input /path/to/esci-data \
   --per-label 50 \
   --output validate/datasets/trec_product_search.json
 ```
 
-Expected ESCI source fields include:
+The script now handles the raw merge automatically when the directory contains files like:
+
+- `shopping_queries_dataset_examples.parquet`
+- `shopping_queries_dataset_products.parquet`
+
+It also still accepts a pre-flattened `.csv` or `.jsonl` input if you already prepared one yourself.
+
+Expected effective ESCI fields after loading/merge include:
 
 - query or query_text
 - product_id or doc_id or asin
@@ -124,7 +131,11 @@ The script preserves source rank when present, otherwise it assigns deterministi
 
 ### 2. Configure your model endpoint
 
-You said you plan to use OpenRouter with a recent model. Since OpenRouter exposes an OpenAI-compatible interface, use:
+This validation runner works with any OpenAI-compatible endpoint. Two common setups are OpenRouter and Ollama.
+
+### 2a. OpenRouter example
+
+Since OpenRouter exposes an OpenAI-compatible interface, use:
 
 ```yaml
 llm:
@@ -150,6 +161,40 @@ grading:
 
 If you use a different model later, only the `model` value needs to change.
 
+### 2b. Ollama example
+
+If you want to run a local 8B model through Ollama, use:
+
+```yaml
+llm:
+  base_url: http://localhost:11434/v1
+  api_key: null
+  model: your-ollama-model-name
+
+grading:
+  max_workers: 4
+  passes: 1
+```
+
+Example:
+
+```yaml
+llm:
+  base_url: http://localhost:11434/v1
+  api_key: null
+  model: llama3.1:8b
+
+grading:
+  max_workers: 4
+  passes: 1
+```
+
+Notes for local 8B runs:
+
+- start with `smoke` before running canonical benchmarks
+- keep worker count modest, usually `2-4`, because local inference can bottleneck quickly
+- weaker models may fail the strict `SCORE:` format more often, so inspect `*-failures.json` if the benchmark run fails
+
 ### 3. Run smoke validation first
 
 Always start with smoke mode:
@@ -167,6 +212,7 @@ This verifies:
 - the endpoint is reachable
 - the model follows the `SCORE:` format
 - artifact writing works
+- your chosen local or hosted model is strong enough to be worth a full benchmark run
 
 ### 4. Run canonical benchmarks
 

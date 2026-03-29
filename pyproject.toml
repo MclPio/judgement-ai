@@ -26,6 +26,8 @@ dev = [
 ]
 validate = [
   "ir-datasets>=0.5.10",
+  "pandas>=2.2.3",
+  "pyarrow>=17.0.0",
   "scipy>=1.15.2",
 ]
 

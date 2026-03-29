@@ -69,6 +69,8 @@ Runbook summary:
 
 See [docs/validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md) for the exact workflow and example commands.
 
+The runbook now includes both OpenRouter and Ollama examples. For local 8B models, start with `smoke` and use a small worker count before attempting the canonical benchmarks.
+
 ## Not yet published
 
 - No benchmark correlation numbers are published yet.

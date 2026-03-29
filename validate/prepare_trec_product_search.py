@@ -96,7 +96,7 @@ def main() -> None:
         "--input",
         type=Path,
         required=True,
-        help="Path to the ESCI CSV or JSONL source file.",
+        help="Path to the ESCI data directory, examples parquet, or flat CSV/JSONL source file.",
     )
     parser.add_argument(
         "--per-label",

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from judgement_ai.validation_prep import label_counts, load_esci_rows, stratified_sample_rows
 
 
@@ -45,7 +47,60 @@ def test_load_esci_rows_supports_csv(tmp_path) -> None:
     assert rows[0]["product_id"] == "p1"
 
 
+def test_load_esci_rows_merges_examples_and_products_from_directory(monkeypatch, tmp_path) -> None:
+    directory = tmp_path / "esci"
+    directory.mkdir()
+    examples = directory / "shopping_queries_dataset_examples.parquet"
+    products = directory / "shopping_queries_dataset_products.parquet"
+    examples.write_text("", encoding="utf-8")
+    products.write_text("", encoding="utf-8")
+
+    def fake_read(path: Path):
+        if path == examples:
+            return [
+                {
+                    "query": "water bottle",
+                    "product_id": "p1",
+                    "product_locale": "us",
+                    "esci_label": "E",
+                }
+            ]
+        if path == products:
+            return [
+                {
+                    "product_id": "p1",
+                    "product_locale": "us",
+                    "product_title": "Insulated Bottle",
+                    "product_brand": "Hydra",
+                }
+            ]
+        raise AssertionError(f"Unexpected path: {path}")
+
+    monkeypatch.setattr("judgement_ai.validation_prep._read_tabular_rows", fake_read)
+
+    rows = load_esci_rows(directory)
+
+    assert rows == [
+        {
+            "query": "water bottle",
+            "product_id": "p1",
+            "product_locale": "us",
+            "esci_label": "E",
+            "product_title": "Insulated Bottle",
+            "product_brand": "Hydra",
+        }
+    ]
+
+
+def test_load_esci_rows_fails_if_product_metadata_is_missing(tmp_path) -> None:
+    directory = tmp_path / "esci"
+    directory.mkdir()
+    (directory / "shopping_queries_dataset_examples.parquet").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain shopping_queries_dataset_examples"):
+        load_esci_rows(directory)
+
+
 def test_provenance_files_exist() -> None:
     assert Path("validate/provenance/trec_dl_passage.md").exists()
     assert Path("validate/provenance/trec_product_search.md").exists()
-
