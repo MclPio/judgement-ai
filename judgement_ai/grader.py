@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from judgement_ai.prompts import load_prompt_template, validate_prompt_template
+from judgement_ai.prompts import (
+    DEFAULT_SCALE_LABELS,
+    load_prompt_template,
+    validate_prompt_template,
+)
 
 
 @dataclass(slots=True)
@@ -45,12 +49,7 @@ class Grader:
         self.domain_context = domain_context or ""
         self.scale_min = scale_min
         self.scale_max = scale_max
-        self.scale_labels = scale_labels or {
-            0: "Completely irrelevant",
-            1: "Related but not relevant",
-            2: "Relevant",
-            3: "Perfectly relevant",
-        }
+        self.scale_labels = scale_labels or DEFAULT_SCALE_LABELS.copy()
         self.max_workers = max_workers
         self.passes = passes
         self.prompt_template = load_prompt_template(prompt_template)
@@ -78,4 +77,3 @@ class Grader:
                     )
                 )
         return results
-

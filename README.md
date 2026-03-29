@@ -6,6 +6,8 @@ Automated AI-powered search relevance grading. Replace costly human experts with
 
 This repository is scaffolded as a Python library first, with a thin CLI layer on top. The implementation plan, agent workflow, and delivery pipeline are documented in [AGENT.md](/Users/mclpio/repos/judgement-ai/AGENT.md) and [PIPELINE.md](/Users/mclpio/repos/judgement-ai/PIPELINE.md).
 
+Prompt research for Milestone 1 is captured in [docs/prompt-research.md](/Users/mclpio/repos/judgement-ai/docs/prompt-research.md).
+
 ## Quickstart
 
 ```bash
@@ -40,4 +42,3 @@ judgement_ai/
 ## Not yet implemented
 
 The repository currently contains the project skeleton, process docs, module stubs, and basic tests so we can build iteratively in a disciplined way.
-
