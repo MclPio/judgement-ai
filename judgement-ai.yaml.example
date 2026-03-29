@@ -1,0 +1,27 @@
+llm:
+  base_url: https://api.openai.com/v1
+  api_key: ${OPENAI_API_KEY}
+  model: gpt-4o-mini
+
+search:
+  type: elasticsearch
+  url: https://my-elastic/catalog
+  top_n: 24
+
+grading:
+  scale_min: 0
+  scale_max: 3
+  scale_labels:
+    0: "Completely irrelevant"
+    1: "Related but not relevant"
+    2: "Relevant"
+    3: "Perfectly relevant"
+  domain_context: "Nutritional supplements catalog"
+  max_workers: 10
+  passes: 1
+  prompt_file: null
+
+output:
+  format: quepid_csv
+  path: judgments.csv
+

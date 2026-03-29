@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "judgement-ai"
+version = "0.1.0"
+description = "Automated AI-powered search relevance grading."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "judgement-ai contributors" }
+]
+dependencies = [
+  "click>=8.1.7",
+  "pyyaml>=6.0.1",
+  "requests>=2.32.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.5",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.11.2",
+]
+validate = [
+  "scipy>=1.15.2",
+]
+
+[project.scripts]
+judgement-ai = "judgement_ai.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["judgement_ai*"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+

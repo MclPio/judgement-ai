@@ -1,0 +1,15 @@
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+coverage.xml
+dist/
+build/
+htmlcov/
+judgments.csv
+judgments.json
+failed.json
+
