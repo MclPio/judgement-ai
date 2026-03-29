@@ -58,12 +58,14 @@ The checked-in benchmark files are currently starter scaffolds shaped like the f
 
 Runbook summary:
 
-1. Replace scaffold benchmark datasets with real derived subsets
-2. Run `smoke` against your OpenAI-compatible endpoint
-3. Run `trec_dl_passage`
-4. Run `trec_product_search`
-5. Promote saved artifacts into `validate/published/`
-6. Update README with actual observed metrics
+1. Rebuild `trec_dl_passage` from `ir-datasets`
+2. Rebuild `trec_product_search` from Amazon ESCI source data
+3. Replace scaffold benchmark datasets with the generated outputs
+4. Run `smoke` against your OpenAI-compatible endpoint
+5. Run `trec_dl_passage`
+6. Run `trec_product_search`
+7. Promote saved artifacts into `validate/published/`
+8. Update README with actual observed metrics
 
 See [docs/validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md) for the exact workflow and example commands.
 

@@ -28,6 +28,11 @@ Current benchmark file locations:
 - `validate/datasets/trec_dl_passage.json`
 - `validate/datasets/trec_product_search.json`
 
+Canonical derivation scripts:
+
+- `validate/prepare_trec_dl_passage.py`
+- `validate/prepare_trec_product_search.py`
+
 Current published artifact placeholders:
 
 - `validate/published/trec_dl_passage/summary.json`
@@ -76,6 +81,46 @@ Recommendations:
 - stratify across relevance levels
 - preserve real query text and the text shown to the judge
 - keep provenance notes current in `validate/provenance/`
+- fail derivation if any selected row cannot be fully resolved
+
+### 1a. Build the TREC DL passage subset
+
+Install validation extras first:
+
+```bash
+pip install -e ".[dev,validate]"
+```
+
+Then build the dataset with `ir-datasets`:
+
+```bash
+.venv/bin/python validate/prepare_trec_dl_passage.py \
+  --per-label 50 \
+  --output validate/datasets/trec_dl_passage.json
+```
+
+This script uses `msmarco-passage/trec-dl-2019/judged` by default and writes the final repo-ready JSON directly.
+
+### 1b. Build the product-search subset
+
+Prepare an Amazon ESCI source file in either `.csv` or `.jsonl` form, then run:
+
+```bash
+.venv/bin/python validate/prepare_trec_product_search.py \
+  --input path/to/esci_source.csv \
+  --per-label 50 \
+  --output validate/datasets/trec_product_search.json
+```
+
+Expected ESCI source fields include:
+
+- query or query_text
+- product_id or doc_id or asin
+- esci_label or label
+- product_title or title
+- optional brand and description fields
+
+The script preserves source rank when present, otherwise it assigns deterministic source-order rank per query.
 
 ### 2. Configure your model endpoint
 
@@ -189,4 +234,3 @@ Recommended order:
 - Canonical benchmarks are designed to fail if any rows are missing after retries.
 - Product-search benchmark evidence supports ecommerce/product relevance claims, not supplement-specific claims.
 - Supplement-specific validation is still a future custom benchmark step.
-

@@ -1,21 +1,9 @@
-import importlib.util
 from pathlib import Path
 
-
-def load_stratified_sample_rows():
-    spec = importlib.util.spec_from_file_location(
-        "validate_prepare_subsets",
-        Path("validate/prepare_subsets.py"),
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.stratified_sample_rows
+from judgement_ai.validation_prep import label_counts, load_esci_rows, stratified_sample_rows
 
 
 def test_stratified_sample_rows_is_deterministic_per_label() -> None:
-    stratified_sample_rows = load_stratified_sample_rows()
     rows = [
         {"query_id": "q2", "doc_id": "b", "human_score": 1},
         {"query_id": "q1", "doc_id": "a", "human_score": 1},
@@ -31,6 +19,33 @@ def test_stratified_sample_rows_is_deterministic_per_label() -> None:
     ]
 
 
+def test_label_counts_returns_sorted_mapping() -> None:
+    counts = label_counts(
+        [
+            {"human_score": 3},
+            {"human_score": 0},
+            {"human_score": 3},
+        ]
+    )
+
+    assert counts == {0: 1, 3: 2}
+
+
+def test_load_esci_rows_supports_csv(tmp_path) -> None:
+    path = tmp_path / "esci.csv"
+    path.write_text(
+        "query,product_id,esci_label,product_title\n"
+        "water bottle,p1,E,Insulated Bottle\n",
+        encoding="utf-8",
+    )
+
+    rows = load_esci_rows(path)
+
+    assert rows[0]["query"] == "water bottle"
+    assert rows[0]["product_id"] == "p1"
+
+
 def test_provenance_files_exist() -> None:
     assert Path("validate/provenance/trec_dl_passage.md").exists()
     assert Path("validate/provenance/trec_product_search.md").exists()
+
