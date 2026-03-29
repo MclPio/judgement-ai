@@ -1,0 +1,38 @@
+[
+  {
+    "benchmark": "smoke",
+    "query_id": "smoke-1",
+    "query": "vitamin b6",
+    "doc_id": "smoke-doc-1",
+    "rank": 1,
+    "human_score": 3,
+    "fields": {
+      "title": "Vitamin B6 100mg Capsules",
+      "description": "A supplement where vitamin B6 is the primary ingredient."
+    }
+  },
+  {
+    "benchmark": "smoke",
+    "query_id": "smoke-1",
+    "query": "vitamin b6",
+    "doc_id": "smoke-doc-2",
+    "rank": 2,
+    "human_score": 0,
+    "fields": {
+      "title": "Ceramic Coffee Mug",
+      "description": "A kitchen mug unrelated to supplements or vitamins."
+    }
+  },
+  {
+    "benchmark": "smoke",
+    "query_id": "smoke-2",
+    "query": "magnesium for sleep",
+    "doc_id": "smoke-doc-3",
+    "rank": 1,
+    "human_score": 2,
+    "fields": {
+      "title": "Magnesium Glycinate",
+      "description": "Often used by customers looking for nighttime magnesium support."
+    }
+  }
+]

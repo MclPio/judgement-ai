@@ -14,6 +14,20 @@ This repository builds `judgement-ai`, a Python library and CLI for automated se
 - Resume support and incremental writes are mandatory.
 - Validation and credibility are first-class, not polish.
 
+## Repo State
+
+Current implementation status:
+
+- Core library, CLI, retry logic, incremental outputs, resume, and validation scaffolding exist.
+- Hybrid validation modes exist for `smoke`, `trec_dl_passage`, and `trec_product_search`.
+- The checked-in canonical benchmark datasets are scaffold artifacts, not final publishable derived benchmark subsets.
+
+This means:
+
+- Do not present benchmark numbers as published facts unless they are backed by saved artifacts under `validate/published/`.
+- Treat `validate/datasets/trec_dl_passage.json` and `validate/datasets/trec_product_search.json` as temporary starter files until replaced by real derived subsets.
+- README benchmark claims must match saved summary artifacts exactly.
+
 ## Delivery Order
 
 Work in this order unless the user explicitly redirects:
@@ -46,6 +60,7 @@ Do not jump ahead if the previous step is not working end-to-end.
 - File formats should be documented with examples.
 - User-facing errors should explain what failed and what to try next.
 - README claims should only be made once code or validation exists.
+- Validation claims should only be made once real benchmark datasets and saved published artifacts exist.
 
 ## Research Notes
 
@@ -66,3 +81,8 @@ A milestone is complete only when:
 - The user-facing behavior is documented
 - The next milestone can build on it without rework
 
+For validation/data milestones, also require:
+
+- provenance notes are updated
+- scaffold-vs-published status is documented honestly
+- any README metric matches committed saved output exactly

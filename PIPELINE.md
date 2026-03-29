@@ -142,7 +142,8 @@ Verification:
 
 Tasks:
 
-- Add benchmark subset and reproduction script
+- Add hybrid validation support for smoke, general-search, and product-search benchmarks
+- Add derived benchmark subsets plus provenance notes
 - Compute correlation against human labels
 - Publish reproducible outputs
 - Document known limitations and tested models
@@ -151,6 +152,13 @@ Verification:
 
 - Validation script runs from a clean checkout
 - README claims match saved outputs
+
+Current follow-up work after milestone implementation:
+
+- replace scaffold benchmark subsets with real derived TREC subsets
+- run canonical benchmarks with a real OpenAI-compatible model
+- promote approved run outputs into `validate/published/`
+- then update README with observed metrics
 
 ## Branching And Review
 
@@ -168,4 +176,3 @@ ruff check .
 ```
 
 If external services are needed, provide a fixture or mock-first path so local tests remain fast and reliable.
-
