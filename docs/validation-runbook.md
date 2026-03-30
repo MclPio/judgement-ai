@@ -96,6 +96,8 @@ Always run smoke first:
   --output-dir validate/artifacts/smoke
 ```
 
+You should now see live progress in the terminal for every completed item, along with a short failure notice if any item exhausts retries.
+
 ## Step 5: Run the Amazon Benchmark
 
 ```bash
@@ -104,6 +106,8 @@ Always run smoke first:
   --config validation.local.yaml \
   --output-dir validate/artifacts/amazon_product_search
 ```
+
+Longer runs now show visible progress item by item so the command does not appear hung.
 
 ## Outputs
 

@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 import requests
@@ -37,6 +39,22 @@ class GradeFailure:
     error: str
     attempts: int
     raw_response: str | None = None
+
+
+@dataclass(slots=True)
+class GradeProgress:
+    """Structured progress event emitted during grading."""
+
+    event: str
+    total: int
+    completed: int
+    successes: int
+    failures: int
+    skipped: int
+    elapsed_seconds: float
+    query: str | None = None
+    doc_id: str | None = None
+    attempts: int | None = None
 
 
 class ParseError(ValueError):
@@ -102,10 +120,12 @@ class Grader:
         failed_log_path: str | Path | None = "failed.json",
         output_path: str | Path | None = None,
         output_format: str | None = None,
+        progress_callback: Callable[[GradeProgress], None] | None = None,
     ) -> list[GradeResult]:
         """Fetch and grade all results for the provided queries."""
         self.last_failures = []
         self.last_summary = {"successes": 0, "failures": 0, "skipped": 0}
+        start_time = monotonic()
 
         completed_pairs = load_completed_pairs(resume_from) if resume_from else set()
         writer = self._build_output_writer(output_path=output_path, output_format=output_format)
@@ -120,8 +140,25 @@ class Grader:
                     continue
                 tasks.append((query, item))
 
+        total = len(tasks)
+        self._emit_progress(
+            progress_callback,
+            GradeProgress(
+                event="start",
+                total=total,
+                completed=0,
+                successes=0,
+                failures=0,
+                skipped=skipped,
+                elapsed_seconds=monotonic() - start_time,
+            ),
+        )
+
         graded_results: list[GradeResult] = []
         failures: list[GradeFailure] = []
+        completed = 0
+        successes = 0
+        failure_count = 0
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_map = {
                 executor.submit(self._grade_result, query=query, item=item): (query, item)
@@ -129,12 +166,44 @@ class Grader:
             }
             for future in as_completed(future_map):
                 result = future.result()
+                completed += 1
                 if isinstance(result, GradeFailure):
                     failures.append(result)
+                    failure_count += 1
+                    self._emit_progress(
+                        progress_callback,
+                        GradeProgress(
+                            event="item_failed",
+                            total=total,
+                            completed=completed,
+                            successes=successes,
+                            failures=failure_count,
+                            skipped=skipped,
+                            elapsed_seconds=monotonic() - start_time,
+                            query=result.query,
+                            doc_id=result.doc_id,
+                            attempts=result.attempts,
+                        ),
+                    )
                 else:
                     graded_results.append(result)
+                    successes += 1
                     if writer is not None:
                         writer.append(result)
+                    self._emit_progress(
+                        progress_callback,
+                        GradeProgress(
+                            event="item_completed",
+                            total=total,
+                            completed=completed,
+                            successes=successes,
+                            failures=failure_count,
+                            skipped=skipped,
+                            elapsed_seconds=monotonic() - start_time,
+                            query=result.query,
+                            doc_id=result.doc_id,
+                        ),
+                    )
 
         graded_results.sort(key=lambda item: (query_order[item.query], item.rank, item.doc_id))
         failures.sort(key=lambda item: (query_order[item.query], item.rank, item.doc_id))
@@ -148,6 +217,19 @@ class Grader:
 
         if failed_log_path is not None and failures:
             self._write_failures(failures, failed_log_path)
+
+        self._emit_progress(
+            progress_callback,
+            GradeProgress(
+                event="finished",
+                total=total,
+                completed=completed,
+                successes=len(graded_results),
+                failures=len(failures),
+                skipped=skipped,
+                elapsed_seconds=monotonic() - start_time,
+            ),
+        )
 
         return graded_results
 
@@ -324,3 +406,11 @@ class Grader:
             for failure in failures
         ]
         Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def _emit_progress(
+        self,
+        callback: Callable[[GradeProgress], None] | None,
+        event: GradeProgress,
+    ) -> None:
+        if callback is not None:
+            callback(event)

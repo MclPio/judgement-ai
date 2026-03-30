@@ -61,6 +61,7 @@ def test_grade_command_uses_results_file_and_writes_json(monkeypatch, tmp_path) 
 
     assert result.exit_code == 0
     assert "1 successes" in result.output
+    assert "1/1 completed" in result.stderr
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload[0]["doc_id"] == "123"
 

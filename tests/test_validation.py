@@ -90,6 +90,34 @@ def test_run_validation_benchmark_writes_completed_summary(monkeypatch, tmp_path
     assert (tmp_path / "smoke-raw-judgments.json").exists()
 
 
+def test_run_validation_benchmark_passes_progress_callback(monkeypatch, tmp_path) -> None:
+    responses = iter(
+        [
+            DummyResponse("Direct match.\nSCORE: 3"),
+            DummyResponse("Irrelevant.\nSCORE: 0"),
+            DummyResponse("Relevant.\nSCORE: 2"),
+        ]
+    )
+    events = []
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        return next(responses)
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    run_validation_benchmark(
+        benchmark="smoke",
+        dataset_path=Path("validate/datasets/smoke.json"),
+        output_dir=tmp_path,
+        grader=make_grader(),
+        progress_callback=events.append,
+    )
+
+    assert events[0].event == "start"
+    assert events[-1].event == "finished"
+
+
 def test_run_validation_benchmark_fails_canonical_partial_run(monkeypatch, tmp_path) -> None:
     dataset_path = tmp_path / "amazon_product_search.json"
     dataset_path.write_text(

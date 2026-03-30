@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from judgement_ai.config import load_config
 from judgement_ai.fetcher import FileResultsFetcher
 from judgement_ai.grader import Grader
+from judgement_ai.progress import TerminalProgressReporter
 from judgement_ai.validation import run_validation_benchmark
 
 BENCHMARK_DATASETS = {
@@ -60,12 +61,14 @@ def main() -> None:
         passes=args.passes or _int_or_default(grading_config.get("passes"), 1),
         prompt_template=args.prompt_file or _string_or_none(grading_config.get("prompt_file")),
     )
+    reporter = TerminalProgressReporter(label=f"validation:{args.benchmark}")
 
     result = run_validation_benchmark(
         benchmark=args.benchmark,
         dataset_path=BENCHMARK_DATASETS[args.benchmark],
         output_dir=args.output_dir,
         grader=grader,
+        progress_callback=reporter,
     )
 
     summary_path = args.output_dir / f"{args.benchmark}-summary.json"
@@ -74,6 +77,14 @@ def main() -> None:
     raw_path.write_text(json.dumps(result["aligned_rows"], indent=2), encoding="utf-8")
 
     print(json.dumps(result["summary"], indent=2))
+    print(
+        "Completed validation run: "
+        f"{result['summary']['benchmark']} | "
+        f"rows={result['summary']['metrics']['num_rows']} | "
+        f"scored={result['summary']['metrics']['num_scored_rows']} | "
+        f"failed={result['summary']['metrics']['num_failed_rows']}",
+        file=sys.stderr,
+    )
     if result["summary"]["status"] == "failed":
         raise SystemExit(1)
 

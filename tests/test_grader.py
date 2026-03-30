@@ -5,7 +5,7 @@ import json
 import pytest
 
 from judgement_ai.fetcher import SearchResult
-from judgement_ai.grader import Grader, ParseError
+from judgement_ai.grader import GradeProgress, Grader, ParseError
 
 
 class StaticFetcher:
@@ -297,3 +297,73 @@ def test_grade_writes_incremental_csv_output(monkeypatch, tmp_path) -> None:
     )
 
     assert "query,docid,rating" in output_path.read_text(encoding="utf-8")
+
+
+def test_grade_emits_progress_events_for_start_skip_and_finish(monkeypatch, tmp_path) -> None:
+    resume_path = tmp_path / "judgments.json"
+    resume_path.write_text(
+        json.dumps(
+            [
+                {
+                    "query": "vitamin b6",
+                    "doc_id": "123",
+                    "score": 3,
+                    "reasoning": "Already done.",
+                    "rank": 1,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    events: list[GradeProgress] = []
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        return DummyResponse(
+            {"choices": [{"message": {"content": "Needs grading.\nSCORE: 2"}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    fetcher = StaticFetcher(
+        {
+            "vitamin b6": [
+                SearchResult(doc_id="123", rank=1, fields={"title": "Done already"}),
+                SearchResult(doc_id="456", rank=2, fields={"title": "New item"}),
+            ]
+        }
+    )
+    grader = make_grader(fetcher=fetcher)
+
+    grader.grade(
+        queries=["vitamin b6"],
+        resume_from=resume_path,
+        failed_log_path=None,
+        progress_callback=events.append,
+    )
+
+    assert [event.event for event in events] == ["start", "item_completed", "finished"]
+    assert events[0].skipped == 1
+    assert events[0].total == 1
+    assert events[-1].successes == 1
+    assert events[-1].skipped == 1
+
+
+def test_grade_emits_failure_progress_event(monkeypatch) -> None:
+    events: list[GradeProgress] = []
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        return DummyResponse({"choices": [{"message": {"content": "Missing score"}}]})
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = make_grader()
+    grader.grade(
+        queries=["vitamin b6"],
+        failed_log_path=None,
+        progress_callback=events.append,
+    )
+
+    assert "item_failed" in [event.event for event in events]

@@ -10,6 +10,7 @@ import click
 from judgement_ai.config import load_config
 from judgement_ai.fetcher import ElasticsearchFetcher, FileResultsFetcher
 from judgement_ai.grader import Grader
+from judgement_ai.progress import TerminalProgressReporter
 
 
 @click.group()
@@ -114,12 +115,14 @@ def grade(
         if prompt_file is not None
         else _config_str(grading_config, "prompt_file"),
     )
+    reporter = TerminalProgressReporter(label="grade")
 
     results = grader.grade(
         queries=queries,
         resume_from=final_output_path if resume else None,
         output_path=final_output_path,
         output_format=final_output_format,
+        progress_callback=reporter,
     )
 
     click.echo(

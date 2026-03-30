@@ -213,6 +213,7 @@ def run_validation_benchmark(
     dataset_path: str | Path,
     output_dir: str | Path,
     grader: Grader,
+    progress_callback: Any | None = None,
 ) -> dict[str, Any]:
     """Run one validation benchmark and write artifacts."""
     rows = load_validation_rows(dataset_path)
@@ -230,6 +231,7 @@ def run_validation_benchmark(
         output_path=raw_judgments_path,
         output_format="json",
         failed_log_path=failed_path,
+        progress_callback=progress_callback,
     )
 
     aligned_rows = align_judgments(rows, results, grader.last_failures)
