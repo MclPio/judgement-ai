@@ -13,3 +13,4 @@ judgments.csv
 judgments.json
 failed.json
 
+validate/datasets/trec_dl_passage.json
