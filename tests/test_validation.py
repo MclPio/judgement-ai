@@ -91,6 +91,24 @@ def test_run_validation_benchmark_writes_completed_summary(monkeypatch, tmp_path
 
 
 def test_run_validation_benchmark_fails_canonical_partial_run(monkeypatch, tmp_path) -> None:
+    dataset_path = tmp_path / "amazon_product_search.json"
+    dataset_path.write_text(
+        json.dumps(
+            [
+                {
+                    "benchmark": "amazon_product_search",
+                    "query_id": "q1",
+                    "query": "wireless headphones",
+                    "doc_id": "p1",
+                    "rank": 1,
+                    "human_score": 3,
+                    "fields": {"title": "Wireless Noise Cancelling Headphones"},
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
     def fake_post(url: str, *, headers, json, timeout):
         del url, headers, json, timeout
         return DummyResponse("Missing strict output")
@@ -98,8 +116,8 @@ def test_run_validation_benchmark_fails_canonical_partial_run(monkeypatch, tmp_p
     monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
 
     result = run_validation_benchmark(
-        benchmark="trec_dl_passage",
-        dataset_path=Path("validate/datasets/trec_dl_passage.json"),
+        benchmark="amazon_product_search",
+        dataset_path=dataset_path,
         output_dir=tmp_path,
         grader=make_grader(),
     )
@@ -111,5 +129,5 @@ def test_run_validation_benchmark_fails_canonical_partial_run(monkeypatch, tmp_p
 def test_results_index_mentions_both_benchmarks() -> None:
     payload = json.loads(Path("validate/results.json").read_text(encoding="utf-8"))
 
-    assert "trec_dl_passage" in payload["benchmarks"]
-    assert "trec_product_search" in payload["benchmarks"]
+    assert "smoke" in payload["benchmarks"]
+    assert "amazon_product_search" in payload["benchmarks"]

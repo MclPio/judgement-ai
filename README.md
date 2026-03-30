@@ -8,6 +8,7 @@ This repository is scaffolded as a Python library first, with a thin CLI layer o
 
 Prompt research for Milestone 1 is captured in [docs/prompt-research.md](/Users/mclpio/repos/judgement-ai/docs/prompt-research.md).
 Validation operations are documented in [docs/validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md).
+Benchmark details are documented in [docs/amazon-benchmark.md](/Users/mclpio/repos/judgement-ai/docs/amazon-benchmark.md).
 
 ## Quickstart
 
@@ -44,28 +45,24 @@ judgement_ai/
 - Elasticsearch and pre-fetched file inputs for v1
 - Quepid CSV and JSON outputs for v1
 - Resumable grading runs
-- Validation workflow against TREC-style benchmark data
+- Validation workflow against Amazon ESCI product-search data
 
 ## Validation
 
-The repository now includes a hybrid validation framework under [validate](/Users/mclpio/repos/judgement-ai/validate):
+The repository now includes an Amazon-focused validation workflow under [validate](/Users/mclpio/repos/judgement-ai/validate):
 
 - `smoke` for fast local verification
-- `trec_dl_passage` for the general-search benchmark story
-- `trec_product_search` for the product-search benchmark story
+- `amazon_product_search` for the real benchmark
 
-The checked-in benchmark files are currently starter scaffolds shaped like the final derived artifacts. They are useful for exercising the validation pipeline, but they are not yet publish-ready official TREC-derived subsets. README benchmark claims should remain pending until those scaffolds are replaced with real derived subsets and saved run artifacts are committed.
+Benchmark data is now local-only by default. Raw Amazon downloads and the derived benchmark dataset live under `validate/data/` and are gitignored. The repo commits the benchmark code and docs, not the generated benchmark data.
 
 Runbook summary:
 
-1. Rebuild `trec_dl_passage` from `ir-datasets`
-2. Rebuild `trec_product_search` from Amazon ESCI source data
-3. Replace scaffold benchmark datasets with the generated outputs
-4. Run `smoke` against your OpenAI-compatible endpoint
-5. Run `trec_dl_passage`
-6. Run `trec_product_search`
-7. Promote saved artifacts into `validate/published/`
-8. Update README with actual observed metrics
+1. Download Amazon ESCI data
+2. Build the local `amazon_product_search` benchmark dataset
+3. Run `smoke` against your OpenAI-compatible endpoint
+4. Run `amazon_product_search`
+5. Review saved artifacts and observed metrics
 
 See [docs/validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md) for the exact workflow and example commands.
 
@@ -75,7 +72,7 @@ The runbook now includes both OpenRouter and Ollama examples. For local 8B model
 
 - No benchmark correlation numbers are published yet.
 - No supplement-specific validation claim is made yet.
-- The current validation datasets and published result files are placeholders/scaffolds for the full benchmark workflow.
+- The benchmark dataset is generated locally and not committed by default.
 
 ## Current State
 
@@ -86,11 +83,10 @@ Implemented:
 - LLM grading with retries, concurrency, and failure logging
 - incremental JSON/CSV outputs and resume support
 - CLI config loading and grade command
-- hybrid validation framework for general search and product search
+- Amazon-only validation workflow plus smoke
 
 Pending before benchmark publication:
 
-- replace scaffold benchmark subsets with real derived TREC subsets
+- generate the Amazon benchmark locally
 - run canonical benchmarks with a real model
-- commit saved benchmark artifacts
 - update README with observed metrics

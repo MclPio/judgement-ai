@@ -1,20 +1,14 @@
 {
-  "status": "scaffolded",
+  "status": "amazon_only",
   "benchmarks": {
     "smoke": {
       "dataset": "validate/datasets/smoke.json",
       "published": false
     },
-    "trec_dl_passage": {
-      "dataset": "validate/datasets/trec_dl_passage.json",
-      "published_summary": "validate/published/trec_dl_passage/summary.json",
-      "published_raw_judgments": "validate/published/trec_dl_passage/raw_judgments.json"
-    },
-    "trec_product_search": {
-      "dataset": "validate/datasets/trec_product_search.json",
-      "published_summary": "validate/published/trec_product_search/summary.json",
-      "published_raw_judgments": "validate/published/trec_product_search/raw_judgments.json"
+    "amazon_product_search": {
+      "dataset": "validate/data/amazon_product_search.json",
+      "published": false
     }
   },
-  "notes": "Validation framework and starter datasets are in place. Publish benchmark claims only after replacing scaffold datasets with real derived subsets and committing saved run artifacts."
+  "notes": "Validation now centers on a local-only Amazon ESCI benchmark plus smoke. Download raw data into validate/data, derive the benchmark locally, and run validation against that dataset."
 }

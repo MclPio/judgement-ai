@@ -19,13 +19,13 @@ This repository builds `judgement-ai`, a Python library and CLI for automated se
 Current implementation status:
 
 - Core library, CLI, retry logic, incremental outputs, resume, and validation scaffolding exist.
-- Hybrid validation modes exist for `smoke`, `trec_dl_passage`, and `trec_product_search`.
-- The checked-in canonical benchmark datasets are scaffold artifacts, not final publishable derived benchmark subsets.
+- Active validation modes are `smoke` and `amazon_product_search`.
+- Benchmark data is intended to be generated locally under `validate/data/`, not committed by default.
 
 This means:
 
 - Do not present benchmark numbers as published facts unless they are backed by saved artifacts under `validate/published/`.
-- Treat `validate/datasets/trec_dl_passage.json` and `validate/datasets/trec_product_search.json` as temporary starter files until replaced by real derived subsets.
+- Treat `validate/data/amazon_product_search.json` as local benchmark data, not repo-owned source.
 - README benchmark claims must match saved summary artifacts exactly.
 
 ## Delivery Order

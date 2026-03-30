@@ -16,8 +16,7 @@ from judgement_ai.validation import run_validation_benchmark
 
 BENCHMARK_DATASETS = {
     "smoke": Path(__file__).with_name("datasets") / "smoke.json",
-    "trec_dl_passage": Path(__file__).with_name("datasets") / "trec_dl_passage.json",
-    "trec_product_search": Path(__file__).with_name("datasets") / "trec_product_search.json",
+    "amazon_product_search": Path(__file__).with_name("data") / "amazon_product_search.json",
 }
 
 

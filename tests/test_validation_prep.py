@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from judgement_ai.validation_prep import label_counts, load_esci_rows, stratified_sample_rows
+from judgement_ai.validation_prep import (
+    filter_esci_rows,
+    label_counts,
+    load_esci_rows,
+    stratified_sample_rows,
+)
 
 
 def test_stratified_sample_rows_is_deterministic_per_label() -> None:
@@ -101,6 +106,17 @@ def test_load_esci_rows_fails_if_product_metadata_is_missing(tmp_path) -> None:
         load_esci_rows(directory)
 
 
+def test_filter_esci_rows_applies_locale_and_small_version() -> None:
+    rows = [
+        {"product_locale": "us", "small_version": "1"},
+        {"product_locale": "us", "small_version": "0"},
+        {"product_locale": "es", "small_version": "1"},
+    ]
+
+    filtered = filter_esci_rows(rows, locale="us", reduced_task_only=True)
+
+    assert filtered == [{"product_locale": "us", "small_version": "1"}]
+
+
 def test_provenance_files_exist() -> None:
-    assert Path("validate/provenance/trec_dl_passage.md").exists()
-    assert Path("validate/provenance/trec_product_search.md").exists()
+    assert Path("validate/provenance/amazon_product_search.md").exists()

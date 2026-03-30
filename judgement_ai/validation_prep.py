@@ -162,6 +162,27 @@ def _merge_esci_examples_and_products(
     return merged
 
 
+def filter_esci_rows(
+    rows: list[dict[str, str]],
+    *,
+    locale: str,
+    reduced_task_only: bool,
+) -> list[dict[str, str]]:
+    """Filter ESCI rows to the desired locale and task view."""
+    filtered = [
+        row
+        for row in rows
+        if row.get("product_locale", "").strip().lower() == locale.lower()
+    ]
+    if reduced_task_only:
+        filtered = [
+            row
+            for row in filtered
+            if row.get("small_version", "").strip() in {"1", "1.0", "true", "True"}
+        ]
+    return filtered
+
+
 def _read_tabular_rows(path: Path) -> list[dict[str, str]]:
     suffix = path.suffix.lower()
     if suffix == ".csv":
