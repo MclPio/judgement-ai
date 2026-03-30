@@ -21,12 +21,14 @@ Current implementation status:
 - Core library, CLI, retry logic, incremental outputs, resume, and validation scaffolding exist.
 - Active validation modes are `smoke` and `amazon_product_search`.
 - Benchmark data is intended to be generated locally under `validate/data/`, not committed by default.
+- Local-model validation now favors a mostly single-pass first run with configurable timeout/retry settings, followed by resume or retry-only sweeps when needed.
 
 This means:
 
 - Do not present benchmark numbers as published facts unless they are backed by saved artifacts under `validate/published/`.
 - Treat `validate/data/amazon_product_search.json` as local benchmark data, not repo-owned source.
 - README benchmark claims must match saved summary artifacts exactly.
+- Keep recovery behavior shared across the grader library, the main CLI, and the validation runner when improving long-running local workflows.
 
 ## Delivery Order
 

@@ -67,6 +67,7 @@ Runbook summary:
 See [docs/validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md) for the exact workflow and example commands.
 
 The runbook now includes both OpenRouter and Ollama examples. For local 8B models, start with `smoke` and use a small worker count before attempting the canonical benchmarks.
+For slower local models, the recommended benchmark flow is a mostly single-pass run with `max_retries: 1`, followed by `--resume` or `--retry-failures` sweeps instead of burning time on inline retries.
 
 ## Not yet published
 
@@ -80,10 +81,10 @@ Implemented:
 
 - prompt system with validation
 - Elasticsearch and pre-fetched results fetchers
-- LLM grading with retries, concurrency, and failure logging
+- LLM grading with configurable retries, timeouts, concurrency, and failure logging
 - incremental JSON/CSV outputs and resume support
 - CLI config loading and grade command
-- Amazon-only validation workflow plus smoke
+- Amazon-only validation workflow plus smoke, progress reporting, and retry/resume recovery
 
 Pending before benchmark publication:
 

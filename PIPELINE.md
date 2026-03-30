@@ -142,23 +142,76 @@ Verification:
 
 Tasks:
 
-- Add hybrid validation support for smoke, general-search, and product-search benchmarks
-- Add derived benchmark subsets plus provenance notes
+- Add validation support for smoke and Amazon product-search benchmarks
+- Add local benchmark derivation tooling plus provenance notes
 - Compute correlation against human labels
-- Publish reproducible outputs
+- Persist reproducible outputs and benchmark artifacts
 - Document known limitations and tested models
 
 Verification:
 
 - Validation script runs from a clean checkout
-- README claims match saved outputs
+- README claims match saved outputs when benchmark artifacts are published
 
 Current follow-up work after milestone implementation:
 
-- replace scaffold benchmark subsets with real derived TREC subsets
-- run canonical benchmarks with a real OpenAI-compatible model
-- promote approved run outputs into `validate/published/`
-- then update README with observed metrics
+- download and derive the local Amazon benchmark dataset
+- run the benchmark with a real OpenAI-compatible or Ollama model
+- review local artifacts and decide what, if anything, should be promoted into published docs
+- then update README with observed metrics only after the outputs are approved
+
+### Milestone 7: Local Validation Reliability
+
+Purpose:
+
+- make long-running local benchmark runs practical
+- separate first-pass benchmarking from failure recovery
+- make timeout/retry behavior configurable
+- keep docs aligned with the implemented workflow
+- keep the work shared across the library, main CLI, and validation runner
+
+Tasks:
+
+- Add configurable `request_timeout` to the shared grader and expose it through validation and the main CLI/config path
+- Add configurable `max_retries` to the shared grader and expose it through validation and the main CLI/config path
+- Change the recommended benchmark workflow to use a mostly single-pass first run, with retries handled later in a separate sweep
+- Add a retry-sweep mode that reruns only failed rows from a prior validation artifact
+- Add validation resume support so successful rows are not regraded unnecessarily
+- Preserve and improve failure artifacts so timeout vs parse-format vs provider errors are easy to distinguish
+- Keep the progress feedback shared across library/CLI/validation and ensure the new recovery flow also reports progress
+- Update `README.md`, `AGENT.md`, and `docs/validation-runbook.md` when the behavior changes
+
+Expected interfaces:
+
+- Shared grader options:
+  - `request_timeout`
+  - `max_retries`
+- Validation runner options:
+  - `--request-timeout`
+  - `--max-retries`
+  - `--resume`
+  - `--retry-failures PATH`
+- Config support under `grading` for timeout and retries
+
+Verification:
+
+- A long local benchmark can run with `max_retries=1`
+- Retry-only sweep reruns failed rows without repeating successful ones
+- Resume mode skips already completed rows
+- Timeout is configurable from validation and the main CLI/config path
+- Docs accurately describe the local-model workflow
+- Tests cover timeout, retry sweep, resume, and failure-artifact behavior
+
+Documentation sync:
+
+- `PIPELINE.md` is the source of truth for this upcoming work
+- `README.md`, `AGENT.md`, and `docs/validation-runbook.md` must be updated once the behavior actually changes
+
+Assumptions:
+
+- This milestone is shared library + CLI + validation work, not validation-only work
+- The focus is reliability and operator workflow, not benchmark methodology changes
+- Documentation sync is part of the milestone, not an optional follow-up
 
 ## Branching And Review
 

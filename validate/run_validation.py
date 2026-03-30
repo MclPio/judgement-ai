@@ -36,7 +36,27 @@ def main() -> None:
     parser.add_argument("--domain", type=str, help="Optional domain context for grading.")
     parser.add_argument("--workers", type=int, help="Maximum concurrent workers.")
     parser.add_argument("--passes", type=int, help="Number of grading passes.")
+    parser.add_argument(
+        "--request-timeout",
+        type=float,
+        help="Provider request timeout in seconds.",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        help="Attempts per item during this run. Use 1 for a mostly single-pass run.",
+    )
     parser.add_argument("--prompt-file", type=str, help="Optional custom prompt template path.")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from existing raw judgments in the output directory.",
+    )
+    parser.add_argument(
+        "--retry-failures",
+        type=Path,
+        help="Rerun only failed rows from a prior failures artifact.",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -59,6 +79,12 @@ def main() -> None:
         domain_context=args.domain or _string_or_none(grading_config.get("domain_context")),
         max_workers=args.workers or _int_or_default(grading_config.get("max_workers"), 10),
         passes=args.passes or _int_or_default(grading_config.get("passes"), 1),
+        max_retries=args.max_retries
+        if args.max_retries is not None
+        else _int_or_default(grading_config.get("max_retries"), 1),
+        request_timeout=args.request_timeout
+        if args.request_timeout is not None
+        else _float_or_default(grading_config.get("request_timeout"), 60.0),
         prompt_template=args.prompt_file or _string_or_none(grading_config.get("prompt_file")),
     )
     reporter = TerminalProgressReporter(label=f"validation:{args.benchmark}")
@@ -68,6 +94,8 @@ def main() -> None:
         dataset_path=BENCHMARK_DATASETS[args.benchmark],
         output_dir=args.output_dir,
         grader=grader,
+        resume=args.resume,
+        retry_failures_from=args.retry_failures,
         progress_callback=reporter,
     )
 
@@ -95,6 +123,10 @@ def _string_or_none(value: object) -> str | None:
 
 def _int_or_default(value: object, default: int) -> int:
     return value if isinstance(value, int) else default
+
+
+def _float_or_default(value: object, default: float) -> float:
+    return float(value) if isinstance(value, int | float) else default
 
 
 def _require_string(value: object, label: str) -> str:

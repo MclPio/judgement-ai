@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from judgement_ai.grader import Grader
 from judgement_ai.validation import (
     ValidationFetcher,
@@ -88,6 +90,8 @@ def test_run_validation_benchmark_writes_completed_summary(monkeypatch, tmp_path
     assert result["summary"]["status"] == "completed"
     assert result["summary"]["metrics"]["num_rows"] == 3
     assert (tmp_path / "smoke-raw-judgments.json").exists()
+    assert result["summary"]["max_retries"] == 3
+    assert result["summary"]["request_timeout"] == 60.0
 
 
 def test_run_validation_benchmark_passes_progress_callback(monkeypatch, tmp_path) -> None:
@@ -152,6 +156,142 @@ def test_run_validation_benchmark_fails_canonical_partial_run(monkeypatch, tmp_p
 
     assert result["summary"]["status"] == "failed"
     assert result["summary"]["metrics"]["num_failed_rows"] > 0
+
+
+def test_run_validation_benchmark_resume_skips_completed_rows(monkeypatch, tmp_path) -> None:
+    dataset_path = Path("validate/datasets/smoke.json")
+    raw_path = tmp_path / "smoke-raw-judgments.json"
+    raw_path.write_text(
+        json.dumps(
+            [
+                {
+                    "query": "vitamin b6",
+                    "doc_id": "smoke-doc-1",
+                    "score": 3,
+                    "reasoning": "Already scored",
+                    "rank": 1,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    calls = {"count": 0}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        calls["count"] += 1
+        return DummyResponse("Relevant.\nSCORE: 2")
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    result = run_validation_benchmark(
+        benchmark="smoke",
+        dataset_path=dataset_path,
+        output_dir=tmp_path,
+        grader=make_grader(),
+        resume=True,
+    )
+
+    assert calls["count"] == 2
+    assert result["summary"]["metrics"]["num_scored_rows"] == 3
+    assert result["summary"]["resume"] is True
+
+
+def test_run_validation_benchmark_retry_failures_only_reruns_failed_rows(
+    monkeypatch, tmp_path
+) -> None:
+    dataset_path = Path("validate/datasets/smoke.json")
+    raw_path = tmp_path / "smoke-raw-judgments.json"
+    raw_path.write_text(
+        json.dumps(
+            [
+                {
+                    "query": "vitamin b6",
+                    "doc_id": "smoke-doc-1",
+                    "score": 3,
+                    "reasoning": "Already scored",
+                    "rank": 1,
+                },
+                {
+                    "query": "vitamin b6",
+                    "doc_id": "smoke-doc-2",
+                    "score": 0,
+                    "reasoning": "Already scored",
+                    "rank": 2,
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    failures_path = tmp_path / "previous-failures.json"
+    failures_path.write_text(
+        json.dumps(
+            [
+                {
+                    "query": "magnesium for sleep",
+                    "doc_id": "smoke-doc-3",
+                    "rank": 1,
+                    "failure_type": "parse_error",
+                    "error": "bad format",
+                    "attempts": 1,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    calls = {"count": 0}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        calls["count"] += 1
+        return DummyResponse("Relevant.\nSCORE: 2")
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    result = run_validation_benchmark(
+        benchmark="smoke",
+        dataset_path=dataset_path,
+        output_dir=tmp_path,
+        grader=make_grader(),
+        retry_failures_from=failures_path,
+    )
+
+    assert calls["count"] == 1
+    assert result["summary"]["retry_failures_from"] == str(failures_path)
+    assert result["summary"]["metrics"]["num_failed_rows"] == 0
+    assert not (tmp_path / "smoke-failures.json").exists()
+
+
+def test_run_validation_benchmark_retry_sweep_requires_existing_raw_judgments(
+    tmp_path,
+) -> None:
+    failures_path = tmp_path / "previous-failures.json"
+    failures_path.write_text(
+        json.dumps(
+            [
+                {
+                    "query": "magnesium for sleep",
+                    "doc_id": "smoke-doc-3",
+                    "rank": 1,
+                    "failure_type": "parse_error",
+                    "error": "bad format",
+                    "attempts": 1,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="existing raw judgments file"):
+        run_validation_benchmark(
+            benchmark="smoke",
+            dataset_path=Path("validate/datasets/smoke.json"),
+            output_dir=tmp_path,
+            grader=make_grader(),
+            retry_failures_from=failures_path,
+        )
 
 
 def test_results_index_mentions_both_benchmarks() -> None:

@@ -36,6 +36,7 @@ class GradeFailure:
     query: str
     doc_id: str
     rank: int
+    failure_type: str
     error: str
     attempts: int
     raw_response: str | None = None
@@ -63,6 +64,14 @@ class ParseError(ValueError):
     def __init__(self, message: str, *, raw_response: str) -> None:
         super().__init__(message)
         self.raw_response = raw_response
+
+
+class ProviderError(RuntimeError):
+    """Raised when the provider request or response fails."""
+
+    def __init__(self, message: str, *, failure_type: str) -> None:
+        super().__init__(message)
+        self.failure_type = failure_type
 
 
 class Grader:
@@ -215,8 +224,12 @@ class Grader:
             "skipped": skipped,
         }
 
-        if failed_log_path is not None and failures:
-            self._write_failures(failures, failed_log_path)
+        if failed_log_path is not None:
+            failed_output_path = Path(failed_log_path)
+            if failures:
+                self._write_failures(failures, failed_output_path)
+            elif failed_output_path.exists():
+                failed_output_path.unlink()
 
         self._emit_progress(
             progress_callback,
@@ -254,6 +267,8 @@ class Grader:
         last_error: Exception | None = None
         last_raw_response: str | None = None
 
+        failure_type = "unknown_error"
+
         for _ in range(self.max_retries):
             try:
                 pass_results = self._run_passes(query=query, item=item)
@@ -274,13 +289,19 @@ class Grader:
             except ParseError as exc:
                 last_error = exc
                 last_raw_response = exc.raw_response
+                failure_type = "parse_error"
+            except ProviderError as exc:
+                last_error = exc
+                failure_type = exc.failure_type
             except Exception as exc:  # pragma: no cover - broad by design for retries
                 last_error = exc
+                failure_type = "unknown_error"
 
         return GradeFailure(
             query=query,
             doc_id=item.doc_id,
             rank=item.rank,
+            failure_type=failure_type,
             error=str(last_error) if last_error else "Unknown grading failure.",
             attempts=self.max_retries,
             raw_response=last_raw_response,
@@ -322,15 +343,21 @@ class Grader:
                 timeout=self.request_timeout,
             )
             response.raise_for_status()
+        except requests.Timeout as exc:
+            msg = f"LLM request timed out after {self.request_timeout} seconds."
+            raise ProviderError(msg, failure_type="timeout") from exc
         except requests.RequestException as exc:
             msg = f"Failed to call LLM provider: {exc}"
-            raise RuntimeError(msg) from exc
+            raise ProviderError(msg, failure_type="provider_error") from exc
 
         data = response.json()
         try:
             message = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("LLM response did not contain a chat completion message.") from exc
+            raise ProviderError(
+                "LLM response did not contain a chat completion message.",
+                failure_type="provider_error",
+            ) from exc
 
         if isinstance(message, str):
             return message
@@ -344,7 +371,10 @@ class Grader:
             if text_parts:
                 return "\n".join(text_parts)
 
-        raise RuntimeError("LLM response message content was not a supported text format.")
+        raise ProviderError(
+            "LLM response message content was not a supported text format.",
+            failure_type="provider_error",
+        )
 
     def parse_response(self, response_text: str) -> tuple[int, str]:
         """Parse reasoning and a strict SCORE line from the model response."""
@@ -395,6 +425,7 @@ class Grader:
                 "query": failure.query,
                 "doc_id": failure.doc_id,
                 "rank": failure.rank,
+                "failure_type": failure.failure_type,
                 "error": failure.error,
                 "attempts": failure.attempts,
                 **(

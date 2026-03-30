@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import requests
 
 from judgement_ai.fetcher import SearchResult
 from judgement_ai.grader import GradeProgress, Grader, ParseError
@@ -110,6 +111,7 @@ def test_call_llm_uses_openai_compatible_payload(monkeypatch) -> None:
     assert captured["headers"]["Authorization"] == "Bearer test-key"
     assert captured["json"]["temperature"] == 0
     assert captured["json"]["messages"][0]["content"] == "Prompt text"
+    assert captured["timeout"] == 60.0
 
 
 def test_grade_returns_scored_results(monkeypatch) -> None:
@@ -180,7 +182,60 @@ def test_grade_retries_failures_logs_failed_items_and_continues(monkeypatch, tmp
     payload = json.loads(failed_log_path.read_text(encoding="utf-8"))
     assert payload[0]["doc_id"] == "bad"
     assert payload[0]["attempts"] == 3
+    assert payload[0]["failure_type"] == "parse_error"
     assert "raw_response" in payload[0]
+
+
+def test_grade_respects_configured_timeout_and_retry_count(monkeypatch, tmp_path) -> None:
+    calls = {"count": 0, "timeout": None}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json
+        calls["count"] += 1
+        calls["timeout"] = timeout
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = Grader(
+        fetcher=StaticFetcher(
+            {
+                "vitamin b6": [
+                    SearchResult(doc_id="123", rank=1, fields={"title": "Vitamin B6 100mg"})
+                ]
+            }
+        ),
+        llm_base_url="https://api.example.com/v1",
+        llm_api_key="test-key",
+        llm_model="gpt-test",
+        max_workers=1,
+        max_retries=1,
+        request_timeout=120.0,
+    )
+
+    failed_log_path = tmp_path / "failed.json"
+    grader.grade(queries=["vitamin b6"], failed_log_path=failed_log_path)
+
+    payload = json.loads(failed_log_path.read_text(encoding="utf-8"))
+    assert calls["count"] == 1
+    assert calls["timeout"] == 120.0
+    assert payload[0]["attempts"] == 1
+    assert payload[0]["failure_type"] == "unknown_error"
+
+
+def test_grade_classifies_timeout_failures(monkeypatch, tmp_path) -> None:
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        raise requests.Timeout("slow")
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = make_grader()
+    failed_log_path = tmp_path / "failed.json"
+    grader.grade(queries=["vitamin b6"], failed_log_path=failed_log_path)
+
+    payload = json.loads(failed_log_path.read_text(encoding="utf-8"))
+    assert payload[0]["failure_type"] == "timeout"
 
 
 def test_grade_collects_pass_scores(monkeypatch) -> None:

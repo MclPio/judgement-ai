@@ -43,6 +43,8 @@ def main() -> None:
 @click.option("--top-n", type=int)
 @click.option("--workers", "max_workers", type=int)
 @click.option("--passes", type=int)
+@click.option("--request-timeout", type=float)
+@click.option("--max-retries", type=int)
 @click.option("--prompt-file", type=click.Path(exists=True, path_type=Path))
 @click.option("--resume", is_flag=True, default=False)
 def grade(
@@ -59,6 +61,8 @@ def grade(
     top_n: int | None,
     max_workers: int | None,
     passes: int | None,
+    request_timeout: float | None,
+    max_retries: int | None,
     prompt_file: Path | None,
     resume: bool,
 ) -> None:
@@ -111,6 +115,14 @@ def grade(
         scale_labels=scale_labels if isinstance(scale_labels, dict) else None,
         max_workers=max_workers or _config_int(grading_config, "max_workers") or 10,
         passes=passes or _config_int(grading_config, "passes") or 1,
+        max_retries=max_retries
+        if max_retries is not None
+        else _config_int(grading_config, "max_retries")
+        or 3,
+        request_timeout=request_timeout
+        if request_timeout is not None
+        else _config_float(grading_config, "request_timeout")
+        or 60.0,
         prompt_template=str(prompt_file)
         if prompt_file is not None
         else _config_str(grading_config, "prompt_file"),
@@ -175,3 +187,10 @@ def _config_int(config: dict[str, Any], key: str) -> int | None:
 def _config_path(config: dict[str, Any], key: str) -> Path | None:
     value = _config_str(config, key)
     return Path(value) if value else None
+
+
+def _config_float(config: dict[str, Any], key: str) -> float | None:
+    value = config.get(key)
+    if isinstance(value, int | float):
+        return float(value)
+    return None

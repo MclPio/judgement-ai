@@ -11,6 +11,7 @@ from typing import Any
 from judgement_ai.fetcher import SearchResult
 from judgement_ai.grader import GradeFailure, Grader
 from judgement_ai.models import GradeResult
+from judgement_ai.output import load_json_results
 
 
 @dataclass(slots=True)
@@ -207,16 +208,38 @@ def compute_metrics(aligned_rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def load_failed_pairs(path: str | Path) -> set[tuple[str, str]]:
+    """Load failed query/document pairs from a JSON failures file."""
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("Failures file must be a JSON list.")
+
+    pairs: set[tuple[str, str]] = set()
+    for item in payload:
+        if isinstance(item, dict) and "query" in item and "doc_id" in item:
+            pairs.add((str(item["query"]), str(item["doc_id"])))
+    return pairs
+
+
 def run_validation_benchmark(
     *,
     benchmark: str,
     dataset_path: str | Path,
     output_dir: str | Path,
     grader: Grader,
+    resume: bool = False,
+    retry_failures_from: str | Path | None = None,
     progress_callback: Any | None = None,
 ) -> dict[str, Any]:
     """Run one validation benchmark and write artifacts."""
-    rows = load_validation_rows(dataset_path)
+    all_rows = load_validation_rows(dataset_path)
+    rows = all_rows
+    if retry_failures_from is not None:
+        failed_pairs = load_failed_pairs(retry_failures_from)
+        rows = [
+            row for row in all_rows if (row.query, row.doc_id) in failed_pairs
+        ]
+
     fetcher = ValidationFetcher(rows)
     grader.fetcher = fetcher
     queries = list(dict.fromkeys(row.query for row in rows))
@@ -225,16 +248,22 @@ def run_validation_benchmark(
     output_root.mkdir(parents=True, exist_ok=True)
     raw_judgments_path = output_root / f"{benchmark}-raw-judgments.json"
     failed_path = output_root / f"{benchmark}-failures.json"
+    if retry_failures_from is not None and not raw_judgments_path.exists():
+        raise ValueError(
+            "Retry sweeps require an existing raw judgments file in the output directory."
+        )
 
-    results = grader.grade(
+    grader.grade(
         queries=queries,
+        resume_from=raw_judgments_path if (resume or retry_failures_from is not None) else None,
         output_path=raw_judgments_path,
         output_format="json",
         failed_log_path=failed_path,
         progress_callback=progress_callback,
     )
 
-    aligned_rows = align_judgments(rows, results, grader.last_failures)
+    all_results = load_json_results(raw_judgments_path) if raw_judgments_path.exists() else []
+    aligned_rows = align_judgments(all_rows, all_results, grader.last_failures)
     metrics = compute_metrics(aligned_rows)
     status = "completed"
     if benchmark != "smoke" and metrics["num_failed_rows"] > 0:
@@ -250,6 +279,10 @@ def run_validation_benchmark(
         "base_url": grader.llm_base_url,
         "passes": grader.passes,
         "workers": grader.max_workers,
+        "request_timeout": grader.request_timeout,
+        "max_retries": grader.max_retries,
+        "resume": resume,
+        "retry_failures_from": str(retry_failures_from) if retry_failures_from else None,
         "metrics": metrics,
     }
     return {"summary": summary, "aligned_rows": aligned_rows}
