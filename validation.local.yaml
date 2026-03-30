@@ -1,0 +1,8 @@
+llm:
+  base_url: http://localhost:11434/v1
+  api_key: null
+  model: qwen3.5:9b
+
+grading:
+  max_workers: 1
+  passes: 1

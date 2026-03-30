@@ -16,3 +16,4 @@ failed.json
 validate/datasets/trec_dl_passage.json
 validate/data/
 validate/datasets/amazon_product_search.json
+validate/artifacts
