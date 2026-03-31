@@ -203,21 +203,22 @@ def _require_string(value: object, label: str) -> str:
 
 
 def _require_calibration_gates(output_dir: Path) -> None:
-    """Require passing local and reference calibration gates before the full run."""
-    local_gate = _find_passing_gate(output_dir, "amazon_product_search_calibration-local-gate.json")
-    reference_gate = _find_passing_gate(
-        output_dir, "amazon_product_search_calibration-reference-gate.json"
-    )
-    if local_gate is None or reference_gate is None:
+    """Require a passing reference calibration gate before the full run."""
+    reference_gate = _find_gate(output_dir, "amazon_product_search_calibration-reference-gate.json")
+    if reference_gate is None:
         raise SystemExit(
-            "Full amazon_product_search runs are blocked until both local and reference "
-            "calibration gates have passed. Run the calibration benchmark first, or "
-            "use --skip-calibration-gates if you intentionally want to bypass this."
+            "Full amazon_product_search runs are blocked until a reference calibration gate "
+            "exists and passes. Run amazon_product_search_calibration with a strong "
+            "reference model first, or use --skip-calibration-gates to bypass this."
         )
 
+    if not _gate_passed(reference_gate):
+        details = _gate_failure_message(reference_gate)
+        raise SystemExit(f"Reference calibration failed: {details}")
 
-def _find_passing_gate(output_dir: Path, filename: str) -> Path | None:
-    """Find a passing gate file in the output directory or nearby artifact roots."""
+
+def _find_gate(output_dir: Path, filename: str) -> Path | None:
+    """Find a gate file in the output directory or nearby artifact roots."""
     roots = [output_dir]
     if output_dir.parent != output_dir:
         roots.append(output_dir.parent)
@@ -228,11 +229,10 @@ def _find_passing_gate(output_dir: Path, filename: str) -> Path | None:
             continue
         seen.add(root)
         direct = root / filename
-        if direct.exists() and _gate_passed(direct):
+        if direct.exists():
             return direct
         for candidate in root.rglob(filename):
-            if _gate_passed(candidate):
-                return candidate
+            return candidate
     return None
 
 
@@ -242,6 +242,36 @@ def _gate_passed(path: Path) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return bool(payload.get("passed"))
+
+
+def _gate_failure_message(path: Path) -> str:
+    """Summarize why a gate file failed."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    failed_reasons = payload.get("failed_reasons", [])
+    metrics = payload.get("metrics", {})
+    parts: list[str] = []
+    for reason in failed_reasons:
+        if reason == "spearman_at_least_0_40":
+            parts.append(f"spearman {metrics.get('spearman')} < 0.40")
+        elif reason == "no_parse_failures":
+            count = (
+                payload.get("analysis", {})
+                .get("failure_counts_by_type", {})
+                .get("parse_error", 0)
+            )
+            parts.append(f"{count} parse failures")
+        elif reason == "no_timeout_failures":
+            count = payload.get("analysis", {}).get("failure_counts_by_type", {}).get("timeout", 0)
+            parts.append(f"{count} timeout failures")
+        elif reason == "no_score_collapse":
+            parts.append("score collapse warning")
+        elif reason == "uses_at_least_three_labels":
+            parts.append("fewer than three labels used")
+        elif reason == "failure_rate_at_most_5_percent":
+            parts.append("failure rate exceeded 5%")
+        else:
+            parts.append(str(reason))
+    return ", ".join(parts) if parts else "unknown gate failure"
 
 
 if __name__ == "__main__":

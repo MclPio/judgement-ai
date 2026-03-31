@@ -1,7 +1,7 @@
 llm:
   base_url: https://openrouter.ai/api/v1
   api_key: ${OPENROUTER_API_KEY}
-  model: your-reference-model
+  model: your-strong-reference-model
   provider: openai_compatible
 
 grading:

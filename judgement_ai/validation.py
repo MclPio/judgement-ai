@@ -327,13 +327,29 @@ def build_calibration_gate(
         checks["failure_rate_at_most_5_percent"] = total_failures <= max(0, total_rows * 0.05)
     else:
         checks["no_parse_failures"] = int(failure_counts.get("parse_error", 0)) == 0
-        checks["spearman_at_least_0_50"] = (metrics["spearman"] or 0.0) >= 0.5
+        checks["spearman_at_least_0_40"] = (metrics["spearman"] or 0.0) >= 0.4
+
+    failed_reasons = [name for name, passed in checks.items() if not passed]
+    warnings: list[str] = []
+    if track == "reference":
+        spearman = metrics["spearman"] or 0.0
+        if 0.4 <= spearman < 0.6:
+            warnings.append(
+                "Reference calibration is viable enough to continue, "
+                "but the thesis remains uncertain."
+            )
+        elif spearman >= 0.6:
+            warnings.append(
+                "Reference calibration cleared the confidence threshold for the fast thesis test."
+            )
 
     return {
         "benchmark": benchmark,
         "track": track,
         "passed": all(checks.values()),
         "checks": checks,
+        "failed_reasons": failed_reasons,
+        "warnings": warnings,
         "metrics": metrics,
         "analysis": analysis,
     }

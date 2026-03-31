@@ -400,6 +400,82 @@ Assumptions:
 - Structured output is the primary path, not prompt-only text parsing
 - `temperature = 0` stays fixed and is not treated as the main cause of the failed run
 
+### Milestone 11: Fast Thesis Test And Validation Runbook Reset
+
+Purpose:
+
+- get a decisive answer quickly on whether the idea still has promise
+- stop wasting time on local-model runs before a trustworthy reference upper bound exists
+- replace hard-to-understand blocking gates with a simpler reference-first runbook
+- keep `temperature = 0` fixed and treat it as a non-issue for now
+
+Tasks:
+
+- Record that this milestone temporarily supersedes the current “full local benchmark first” flow
+- Use this sequencing:
+  1. derive the current Amazon benchmark and calibration slice
+  2. run `smoke` locally
+  3. run one strong frontier reference calibration
+  4. if that passes a viability threshold, run the full reference `200`-row benchmark
+  5. only then run local calibration and local full runs as comparison or cost-saving follow-up
+- Explicitly document that:
+  - the current Amazon slice is acceptable for one fast thesis test
+  - sampler redesign is deferred until after the reference verdict
+  - the local gate must not hard-block exploratory full runs
+  - the reference track is the deciding signal
+- Rewrite the validation runbook around diagnosis instead of blocking:
+  - build datasets
+  - run local smoke
+  - run frontier reference calibration
+  - run full reference benchmark if calibration is viable
+  - then run local calibration and local full benchmark as comparison
+  - keep `max_retries: 1`, high local timeout, and `--resume` / `--retry-failures` cleanup
+- Change gate behavior:
+  - reference calibration gate stays meaningful
+  - local calibration gate becomes advisory
+  - the full benchmark command hard-blocks only when there is no passing reference calibration
+  - blocker messaging must name exact failed conditions
+- Freeze the current benchmark slice for this decisive test:
+  - do not change sampling again before the next reference verdict
+  - if the strong reference run fails badly, revisit slice construction and prompt semantics next
+  - if the strong reference run succeeds reasonably, treat the current slice as sufficient for continued iteration
+- Keep `temperature = 0` fixed in configs and docs; do not add temperature tuning work in this milestone
+
+Reference calibration interpretation:
+
+- if parse failures > `0`, the structured-output or provider path is not stable enough
+- if a score-collapse warning appears, the judge setup is not usable yet
+- if Spearman `< 0.40`, stop and revisit prompt or benchmark fit before any full run
+- if Spearman is `0.40 - 0.59`, continue to the full reference benchmark but treat the thesis as uncertain
+- if Spearman `>= 0.60`, continue confidently to the full reference benchmark
+
+Full reference benchmark interpretation:
+
+- if full-reference Spearman `< 0.50`, the thesis is in serious doubt and should pause for benchmark or prompt redesign
+- if full-reference Spearman is `0.50 - 0.69`, continue iterating but do not publish credibility claims
+- if full-reference Spearman `>= 0.70`, continue with local-model comparison and optimization
+
+Verification:
+
+- gate logic allows the full benchmark when the reference gate passes even if the local gate fails
+- gate logic blocks the full benchmark when the reference gate fails and names the exact failed checks
+- the runbook and config examples match the new reference-first flow
+- `temperature = 0` remains fixed
+- local config remains single-pass and structured-output-first
+
+Documentation sync:
+
+- `docs/validation-runbook.md` becomes the operator-facing source of truth for the reference-first thesis test
+- `README.md` and `AGENT.md` must reflect that local-model results are secondary evidence until the reference upper bound is known
+
+Assumptions:
+
+- Amazon ESCI stays as the benchmark source
+- the current slice is acceptable for a fast thesis test, but not yet for publication-quality claims
+- one stronger paid reference run is allowed and required
+- local-model results are secondary evidence until the reference upper bound is known
+- `temperature = 0` remains fixed
+
 ## Branching And Review
 
 - Prefer one milestone per branch or PR

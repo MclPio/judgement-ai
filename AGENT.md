@@ -23,6 +23,9 @@ Current implementation status:
 - Benchmark data is intended to be generated locally under `validate/data/`, not committed by default.
 - Local-model validation now favors a mostly single-pass first run with configurable timeout/retry settings, followed by resume or retry-only sweeps when needed.
 - Validation now also has an Amazon ESCI prompt profile, structured-output support, live artifact updates, and calibration gate artifacts.
+- The current validation decision flow is reference-first: a strong reference model establishes the upper bound before local-model results are treated as meaningful evidence.
+- The local calibration gate is advisory. Only the reference calibration gate should hard-block a full benchmark run during the fast thesis-test phase.
+- The current 200-row Amazon slice is frozen for one decisive thesis test; do not resample again unless there is a clear derivation bug.
 
 This means:
 
@@ -32,6 +35,7 @@ This means:
 - README benchmark claims must match saved summary artifacts exactly.
 - Keep recovery behavior shared across the grader library, the main CLI, and the validation runner when improving long-running local workflows.
 - For Amazon validation work, prefer ESCI-specific prompt semantics and structured output over generic text-mode scoring prompts.
+- Do not let a weak local-model result outweigh a strong reference verdict when assessing whether the project thesis still has promise.
 
 ## Delivery Order
 

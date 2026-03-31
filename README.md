@@ -62,14 +62,15 @@ Runbook summary:
 1. Download Amazon ESCI data
 2. Build the local `amazon_product_search`, calibration, and report artifacts
 3. Run `smoke` against your OpenAI-compatible endpoint
-4. Run `amazon_product_search_calibration` locally
-5. Run the same calibration slice with a stronger reference judge
-6. Only then run `amazon_product_search`
+4. Run `amazon_product_search_calibration` with one strong non-lite reference judge
+5. If that looks viable, run the full reference `amazon_product_search` benchmark
+6. Only then run local calibration and local full benchmarks as comparison evidence
 7. Review saved artifacts, analysis, and observed metrics
 
 See [docs/validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md) for the exact workflow and example commands.
 
 The runbook now includes both OpenRouter and Ollama examples. For local Qwen/Ollama runs, use the Amazon ESCI prompt profile, JSON-schema output, `provider: ollama`, `think: false`, a small worker count, and a mostly single-pass run with `max_retries: 1`, followed by `--resume` or `--retry-failures` sweeps instead of burning time on inline retries.
+The current operator workflow is **reference-first**: establish viability with a strong non-lite reference calibration and full reference benchmark, then treat local-model runs as comparison evidence rather than the primary verdict. The local calibration gate is diagnostic only; the full benchmark now hard-blocks only when there is no passing reference calibration.
 
 ## Not yet published
 

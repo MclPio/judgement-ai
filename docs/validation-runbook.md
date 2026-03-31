@@ -1,6 +1,14 @@
 # Validation Runbook
 
-This repo now uses one real benchmark plus one tiny sanity-check mode:
+This runbook is now optimized for a **fast thesis test**.
+
+The goal is to answer three questions quickly:
+
+1. Can a strong reference judge produce a viable result on this Amazon benchmark?
+2. If yes, how far behind is the local model?
+3. If no, is the problem more likely prompt/benchmark fit than local-model quality?
+
+This repo uses one real benchmark plus one tiny sanity-check mode:
 
 - `smoke`
 - `amazon_product_search_calibration`
@@ -59,7 +67,7 @@ Optional overrides:
 - `--calibration-per-label`
 - `--dry-run`
 
-## Step 3: Configure the Model
+## Step 3: Configure The Models
 
 The validation runner works with any OpenAI-compatible endpoint.
 
@@ -82,13 +90,13 @@ grading:
   prompt_profile: amazon_esci
 ```
 
-### Hosted endpoint example
+### Reference endpoint example
 
 ```yaml
 llm:
   base_url: https://openrouter.ai/api/v1
   api_key: ${OPENROUTER_API_KEY}
-  model: your-model-name
+  model: your-strong-reference-model
   provider: openai_compatible
 
 grading:
@@ -101,6 +109,12 @@ grading:
 ```
 
 The repo also includes [validation.reference.yaml.example](/Users/mclpio/repos/judgement-ai/validation.reference.yaml.example) as a starting point for the reference-model track.
+
+Important:
+
+- The decisive reference verdict must use a **strong non-lite model**.
+- Do **not** use `lite`, `flash-lite`, or `mini-preview` class models as the only reference verdict.
+- Keep `temperature = 0` fixed. This runbook does not treat temperature as an active tuning variable.
 
 ## Step 4: Run Smoke
 
@@ -115,25 +129,7 @@ Always run smoke first:
 
 You should now see live progress in the terminal for every completed item, along with a short failure notice if any item exhausts retries.
 
-## Step 5: Run Local Calibration
-
-```bash
-.venv/bin/python validate/run_validation.py \
-  --benchmark amazon_product_search_calibration \
-  --config validation.local.yaml \
-  --output-dir validate/artifacts/calibration_local
-```
-
-Local calibration must pass these gates before the full benchmark:
-
-- timeout failures: `0`
-- total failures: `<= 5%`
-- scored output uses at least `3` labels
-- no single AI score bucket exceeds `70%` of scored rows
-
-## Step 6: Run Reference Calibration
-
-Run the same calibration benchmark with a stronger hosted judge:
+## Step 5: Run Frontier Reference Calibration
 
 ```bash
 .venv/bin/python validate/run_validation.py \
@@ -142,16 +138,63 @@ Run the same calibration benchmark with a stronger hosted judge:
   --output-dir validate/artifacts/calibration_reference
 ```
 
-Reference calibration must pass these gates before the full benchmark:
+This is the primary go/no-go step.
+
+Interpret the result like this:
+
+- if parse failures > `0`: the structured-output or provider path is not stable enough
+- if a score-collapse warning appears: the judge setup is not usable yet
+- if Spearman `< 0.40`: stop and revisit prompt or benchmark fit before any full run
+- if Spearman is `0.40 - 0.59`: continue to the full **reference** benchmark, but treat the thesis as uncertain
+- if Spearman `>= 0.60`: continue confidently to the full reference benchmark
+
+## Step 6: Run The Full Reference Benchmark
+
+```bash
+.venv/bin/python validate/run_validation.py \
+  --benchmark amazon_product_search \
+  --config validation.reference.yaml \
+  --output-dir validate/artifacts/reference_full
+```
+
+This establishes the best current upper bound for the thesis.
+
+If the full run is blocked, treat that as a signal that the reference calibration did not pass.
+The blocker should now tell you the exact failed condition, for example:
+
+- `Reference calibration failed: spearman 0.304068 < 0.40`
+- `Reference calibration failed: score collapse warning`
+- `Reference calibration failed: 2 parse failures`
+
+Interpret the full reference result like this:
+
+- if full-reference Spearman `< 0.50`: the thesis is in serious doubt and should pause for benchmark or prompt redesign
+- if full-reference Spearman is `0.50 - 0.69`: continue iterating, but do not publish credibility claims
+- if full-reference Spearman `>= 0.70`: continue with local-model comparison and optimization
+
+## Step 7: Run Local Calibration
+
+```bash
+.venv/bin/python validate/run_validation.py \
+  --benchmark amazon_product_search_calibration \
+  --config validation.local.yaml \
+  --output-dir validate/artifacts/calibration_local
+```
+
+Local calibration is now **advisory**, not blocking.
+
+Use it to estimate how far behind the local model is and to catch obvious local-provider problems.
+
+Good local calibration signals:
 
 - timeout failures: `0`
-- parse failures: `0`
-- no score collapse
-- Spearman `>= 0.50`
+- total failures: `<= 5%`
+- scored output uses at least `3` labels
+- no single AI score bucket exceeds `70%` of scored rows
 
-If the reference calibration fails, stop and revisit the benchmark slice or prompt design before rerunning the full benchmark.
+Poor local calibration no longer blocks the full local benchmark as long as the reference path has already shown viability.
 
-## Step 7: Run The Full Amazon Benchmark
+## Step 8: Run The Full Local Benchmark
 
 ```bash
 .venv/bin/python validate/run_validation.py \
@@ -162,15 +205,15 @@ If the reference calibration fails, stop and revisit the benchmark slice or prom
 
 Recommended local-model workflow:
 
-- Start with `grading.max_retries: 1` so the first pass keeps moving.
-- Use `response_mode: json_schema` and `provider: ollama` for local Qwen/Ollama runs.
-- Disable thinking explicitly for local Ollama runs with `llm.think: false`.
-- Use a larger `grading.request_timeout` for slower local models.
-- Let the first pass finish, then rerun only failed rows in a clean second sweep.
+- keep `grading.max_retries: 1`
+- keep `response_mode: json_schema`
+- keep `provider: ollama`
+- keep `llm.think: false`
+- keep a high `grading.request_timeout`
+- let the first pass finish, then clean up with resume or retry sweeps
+- the full local run now depends on the **reference** calibration verdict, not the local calibration verdict
 
-Longer runs now show visible progress item by item so the command does not appear hung.
-
-## Step 8: Resume Or Retry Only Failures
+## Step 9: Resume Or Retry Only Failures
 
 Resume a partially completed run without regrading successful rows:
 
@@ -214,17 +257,23 @@ Inspect:
 - aligned rows to inspect human/AI disagreement
 - analysis for score distribution, empty-raw parse failures, and query concentration
 
-Calibration runs also write:
+Calibration runs write gate files:
 
 - `amazon_product_search_calibration-local-gate.json`
 - `amazon_product_search_calibration-reference-gate.json`
 
+Only the **reference** gate is a hard blocker for the full benchmark in the current thesis-test flow.
+The local gate is diagnostic only.
+
 ## Notes
 
 - Raw and derived benchmark data under `validate/data/` is local-only and gitignored.
+- The current deterministic 200-row Amazon slice is frozen for one fast thesis test.
+- Do not resample before the next strong reference verdict unless you find a clear derivation bug.
 - `smoke` is for checking endpoint behavior and artifact plumbing cheaply.
-- `amazon_product_search_calibration` is the fast gate before a full run.
+- `amazon_product_search_calibration` is the fast diagnosis slice.
 - `amazon_product_search` is the main benchmark.
 - Retry sweeps require an existing `<benchmark>-raw-judgments.json` file in the output directory.
 - Validation defaults to Amazon ESCI prompt semantics and JSON-schema output on supported providers.
+- The full benchmark is hard-blocked only when there is no **passing reference** calibration gate, unless you use `--skip-calibration-gates`.
 - Benchmark behavior is documented in [amazon-benchmark.md](/Users/mclpio/repos/judgement-ai/docs/amazon-benchmark.md).
