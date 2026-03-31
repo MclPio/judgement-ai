@@ -9,12 +9,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from judgement_ai.validation_prep import (  # noqa: E402
+    build_benchmark_report,
     filter_esci_rows,
     label_counts,
     load_esci_rows,
     print_summary,
     stratified_sample_rows,
     write_dataset,
+    write_report,
 )
 from validate.download_amazon_esci import download_esci_data  # noqa: E402
 
@@ -31,6 +33,7 @@ def build_candidate_rows(
     *,
     locale: str = "us",
     reduced_task_only: bool = True,
+    benchmark: str = "amazon_product_search",
 ) -> list[dict[str, object]]:
     """Load candidate rows from Amazon ESCI source data."""
     source_rows = load_esci_rows(source_path)
@@ -85,7 +88,7 @@ def build_candidate_rows(
 
         rows.append(
             {
-                "benchmark": "amazon_product_search",
+                "benchmark": benchmark,
                 "query_id": str(query_id),
                 "query": query,
                 "doc_id": doc_id,
@@ -146,6 +149,24 @@ def main() -> None:
         help="Path to write the final dataset JSON.",
     )
     parser.add_argument(
+        "--calibration-output",
+        type=Path,
+        default=Path(__file__).with_name("data") / "amazon_product_search_calibration.json",
+        help="Path to write the fixed-size calibration dataset JSON.",
+    )
+    parser.add_argument(
+        "--calibration-per-label",
+        type=int,
+        default=12,
+        help="Maximum number of rows to keep per label in the calibration slice.",
+    )
+    parser.add_argument(
+        "--report-output",
+        type=Path,
+        default=Path(__file__).with_name("data") / "amazon_product_search_report.json",
+        help="Path to write the derivation report JSON.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print summary only without writing the dataset file.",
@@ -162,11 +183,18 @@ def main() -> None:
         reduced_task_only=not args.full_task,
     )
     sampled = stratified_sample_rows(rows, per_label=args.per_label)
+    calibration = [
+        {**row, "benchmark": "amazon_product_search_calibration"}
+        for row in stratified_sample_rows(rows, per_label=args.calibration_per_label)
+    ]
+    report = build_benchmark_report(rows, sampled)
     before_counts = label_counts(rows)
     after_counts = label_counts(sampled)
 
     if not args.dry_run:
         write_dataset(sampled, args.output)
+        write_dataset(calibration, args.calibration_output)
+        write_report(report, args.report_output)
 
     print_summary(
         total_candidates=len(rows),
@@ -176,6 +204,12 @@ def main() -> None:
         output_path=args.output,
         dry_run=args.dry_run,
     )
+    print(f"Calibration row count: {len(calibration)}")
+    if args.dry_run:
+        print("Dry run: no calibration or report files were written.")
+    else:
+        print(f"Calibration output path: {args.calibration_output}")
+        print(f"Report output path: {args.report_output}")
 
 
 if __name__ == "__main__":

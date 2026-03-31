@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from judgement_ai.validation_prep import (
+    build_benchmark_report,
     filter_esci_rows,
     label_counts,
     load_esci_rows,
@@ -10,19 +11,24 @@ from judgement_ai.validation_prep import (
 )
 
 
-def test_stratified_sample_rows_is_deterministic_per_label() -> None:
+def test_stratified_sample_rows_is_query_balanced_and_deterministic() -> None:
     rows = [
-        {"query_id": "q2", "doc_id": "b", "human_score": 1},
-        {"query_id": "q1", "doc_id": "a", "human_score": 1},
-        {"query_id": "q3", "doc_id": "c", "human_score": 3},
-        {"query_id": "q4", "doc_id": "d", "human_score": 3},
+        {"query": "q1", "query_id": "q1", "doc_id": "a1", "rank": 1, "human_score": 1},
+        {"query": "q1", "query_id": "q1", "doc_id": "a2", "rank": 2, "human_score": 1},
+        {"query": "q2", "query_id": "q2", "doc_id": "b1", "rank": 1, "human_score": 1},
+        {"query": "q3", "query_id": "q3", "doc_id": "c1", "rank": 1, "human_score": 1},
+        {"query": "q4", "query_id": "q4", "doc_id": "d1", "rank": 1, "human_score": 3},
+        {"query": "q5", "query_id": "q5", "doc_id": "e1", "rank": 1, "human_score": 3},
     ]
 
-    sampled = stratified_sample_rows(rows, per_label=1)
+    sampled = stratified_sample_rows(rows, per_label=3)
 
     assert sampled == [
-        {"query_id": "q1", "doc_id": "a", "human_score": 1},
-        {"query_id": "q3", "doc_id": "c", "human_score": 3},
+        {"query": "q1", "query_id": "q1", "doc_id": "a1", "rank": 1, "human_score": 1},
+        {"query": "q2", "query_id": "q2", "doc_id": "b1", "rank": 1, "human_score": 1},
+        {"query": "q3", "query_id": "q3", "doc_id": "c1", "rank": 1, "human_score": 1},
+        {"query": "q4", "query_id": "q4", "doc_id": "d1", "rank": 1, "human_score": 3},
+        {"query": "q5", "query_id": "q5", "doc_id": "e1", "rank": 1, "human_score": 3},
     ]
 
 
@@ -116,6 +122,31 @@ def test_filter_esci_rows_applies_locale_and_small_version() -> None:
     filtered = filter_esci_rows(rows, locale="us", reduced_task_only=True)
 
     assert filtered == [{"product_locale": "us", "small_version": "1"}]
+
+
+def test_build_benchmark_report_counts_queries_and_blankish_fields() -> None:
+    candidate_rows = [
+        {
+            "query": "water bottle",
+            "human_score": 3,
+            "fields": {"title": "Bottle", "brand": "Hydra", "description": "nan"},
+        },
+        {
+            "query": "water bottle",
+            "human_score": 2,
+            "fields": {"title": "Alt Bottle", "brand": "", "description": "Steel"},
+        },
+    ]
+    benchmark_rows = [candidate_rows[0]]
+
+    report = build_benchmark_report(candidate_rows, benchmark_rows)
+
+    assert report["candidate_total_rows"] == 2
+    assert report["benchmark_total_rows"] == 1
+    assert report["candidate_unique_queries"] == 1
+    assert report["top_query_frequencies"] == [{"query": "water bottle", "count": 1}]
+    assert report["candidate_blankish_counts"]["brand"] == 1
+    assert report["candidate_blankish_counts"]["description"] == 1
 
 
 def test_provenance_files_exist() -> None:

@@ -1,8 +1,11 @@
 from judgement_ai.prompts import (
+    AMAZON_ESCI_SCALE_LABELS,
     DEFAULT_PROMPT_TEMPLATE,
     DEFAULT_SCALE_LABELS,
     build_prompt,
+    get_prompt_profile,
     render_domain_context,
+    render_output_instructions,
     render_result_fields,
     render_scale_labels,
     validate_prompt_template,
@@ -71,3 +74,29 @@ def test_build_prompt_includes_domain_context_scale_and_query() -> None:
     assert "0: Completely irrelevant" in prompt
     assert "title: Vitamin B6 100mg" in prompt
 
+
+def test_build_prompt_uses_json_schema_output_instructions() -> None:
+    prompt = build_prompt(
+        query="wireless headphones",
+        result_fields={"title": "Headphones"},
+        response_mode="json_schema",
+    )
+
+    assert "Respond with a JSON object" in prompt
+    assert "SCORE: <number>" not in prompt
+
+
+def test_get_prompt_profile_returns_amazon_esci_profile() -> None:
+    profile = get_prompt_profile("amazon_esci")
+
+    assert profile["scale_labels"] == AMAZON_ESCI_SCALE_LABELS
+    assert "Amazon ESCI taxonomy" in profile["template"]
+
+
+def test_render_output_instructions_rejects_unknown_mode() -> None:
+    try:
+        render_output_instructions("unknown")
+    except ValueError as exc:
+        assert "Unsupported response_mode" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for unsupported response mode")

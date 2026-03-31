@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -14,21 +14,53 @@ def stratified_sample_rows(
     *,
     per_label: int,
 ) -> list[dict[str, Any]]:
-    """Take a deterministic per-label sample from candidate rows."""
+    """Take a deterministic per-label sample using round-robin query balancing."""
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         grouped[int(row["human_score"])].append(row)
 
     sampled: list[dict[str, Any]] = []
     for label in sorted(grouped):
-        label_rows = sorted(
-            grouped[label],
-            key=lambda item: (
-                str(item.get("query_id", "")),
-                str(item.get("doc_id", "")),
+        by_query: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in grouped[label]:
+            by_query[str(row.get("query", ""))].append(row)
+
+        ordered_queries = sorted(
+            by_query,
+            key=lambda query: (
+                min(str(item.get("query_id", "")) for item in by_query[query]),
+                query,
             ),
         )
-        sampled.extend(label_rows[:per_label])
+        ordered_rows = {
+            query: sorted(
+                items,
+                key=lambda item: (
+                    int(item.get("rank", 0)),
+                    str(item.get("doc_id", "")),
+                ),
+            )
+            for query, items in by_query.items()
+        }
+        positions = {query: 0 for query in ordered_queries}
+        label_sample: list[dict[str, Any]] = []
+
+        while len(label_sample) < per_label:
+            added_in_round = False
+            for query in ordered_queries:
+                position = positions[query]
+                query_rows = ordered_rows[query]
+                if position >= len(query_rows):
+                    continue
+                label_sample.append(query_rows[position])
+                positions[query] += 1
+                added_in_round = True
+                if len(label_sample) >= per_label:
+                    break
+            if not added_in_round:
+                break
+
+        sampled.extend(label_sample)
     return sampled
 
 
@@ -43,6 +75,37 @@ def label_counts(rows: list[dict[str, Any]]) -> dict[int, int]:
 def write_dataset(rows: list[dict[str, Any]], path: str | Path) -> None:
     """Write the final benchmark dataset JSON."""
     Path(path).write_text(json.dumps(rows, indent=2), encoding="utf-8")
+
+
+def build_benchmark_report(
+    candidate_rows: list[dict[str, Any]],
+    benchmark_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build a deterministic report describing the derived benchmark slice."""
+    query_counts = Counter(str(row.get("query", "")) for row in benchmark_rows)
+    candidate_fields, candidate_blankish = _field_stats(candidate_rows)
+    benchmark_fields, benchmark_blankish = _field_stats(benchmark_rows)
+    return {
+        "candidate_total_rows": len(candidate_rows),
+        "benchmark_total_rows": len(benchmark_rows),
+        "candidate_label_counts": label_counts(candidate_rows),
+        "benchmark_label_counts": label_counts(benchmark_rows),
+        "candidate_unique_queries": len({str(row.get("query", "")) for row in candidate_rows}),
+        "benchmark_unique_queries": len({str(row.get("query", "")) for row in benchmark_rows}),
+        "top_query_frequencies": [
+            {"query": query, "count": count}
+            for query, count in query_counts.most_common(20)
+        ],
+        "candidate_field_counts": candidate_fields,
+        "candidate_blankish_counts": candidate_blankish,
+        "benchmark_field_counts": benchmark_fields,
+        "benchmark_blankish_counts": benchmark_blankish,
+    }
+
+
+def write_report(report: dict[str, Any], path: str | Path) -> None:
+    """Write the benchmark derivation report."""
+    Path(path).write_text(json.dumps(report, indent=2), encoding="utf-8")
 
 
 def print_summary(
@@ -63,6 +126,23 @@ def print_summary(
         print("Dry run: no dataset file was written.")
     elif output_path is not None:
         print(f"Output path: {output_path}")
+
+
+def _field_stats(rows: list[dict[str, Any]]) -> tuple[dict[str, int], dict[str, int]]:
+    """Count field coverage and blank-like values for benchmark fields."""
+    present = Counter()
+    blankish = Counter()
+    for row in rows:
+        fields = row.get("fields", {})
+        if not isinstance(fields, dict):
+            continue
+        for key in ["title", "brand", "description"]:
+            if key in fields:
+                present[key] += 1
+                value = fields[key]
+                if value is None or str(value).strip() == "" or str(value).lower() == "nan":
+                    blankish[key] += 1
+    return dict(present), dict(blankish)
 
 
 def load_esci_rows(path: str | Path) -> list[dict[str, str]]:

@@ -1,4 +1,5 @@
 """Validation entrypoint."""
+# ruff: noqa: I001
 
 from __future__ import annotations
 
@@ -12,12 +13,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from judgement_ai.config import load_config
 from judgement_ai.fetcher import FileResultsFetcher
 from judgement_ai.grader import Grader
+from judgement_ai.prompts import get_prompt_profile
 from judgement_ai.progress import TerminalProgressReporter
 from judgement_ai.validation import run_validation_benchmark
 
 BENCHMARK_DATASETS = {
     "smoke": Path(__file__).with_name("datasets") / "smoke.json",
     "amazon_product_search": Path(__file__).with_name("data") / "amazon_product_search.json",
+    "amazon_product_search_calibration": (
+        Path(__file__).with_name("data") / "amazon_product_search_calibration.json"
+    ),
 }
 
 
@@ -34,6 +39,11 @@ def main() -> None:
     parser.add_argument("--base-url", type=str, help="OpenAI-compatible base URL.")
     parser.add_argument("--api-key", type=str, help="API key for the LLM provider.")
     parser.add_argument("--domain", type=str, help="Optional domain context for grading.")
+    parser.add_argument(
+        "--provider",
+        choices=["auto", "ollama", "openai_compatible"],
+        help="LLM provider mode.",
+    )
     parser.add_argument("--workers", type=int, help="Maximum concurrent workers.")
     parser.add_argument("--passes", type=int, help="Number of grading passes.")
     parser.add_argument(
@@ -46,7 +56,30 @@ def main() -> None:
         type=int,
         help="Attempts per item during this run. Use 1 for a mostly single-pass run.",
     )
+    parser.add_argument(
+        "--response-mode",
+        choices=["json_schema", "text"],
+        help="LLM output mode. Validation defaults to json_schema.",
+    )
+    parser.add_argument(
+        "--prompt-profile",
+        choices=["default", "amazon_esci"],
+        help="Named prompt profile to use for validation.",
+    )
     parser.add_argument("--prompt-file", type=str, help="Optional custom prompt template path.")
+    parser.add_argument(
+        "--think",
+        dest="think",
+        action="store_true",
+        default=None,
+        help="Enable provider thinking when supported.",
+    )
+    parser.add_argument(
+        "--no-think",
+        dest="think",
+        action="store_false",
+        help="Disable provider thinking when supported.",
+    )
     parser.add_argument(
         "--resume",
         action="store_true",
@@ -56,6 +89,11 @@ def main() -> None:
         "--retry-failures",
         type=Path,
         help="Rerun only failed rows from a prior failures artifact.",
+    )
+    parser.add_argument(
+        "--skip-calibration-gates",
+        action="store_true",
+        help="Run the full Amazon benchmark even if calibration gate files are missing or failing.",
     )
     parser.add_argument(
         "--output-dir",
@@ -70,6 +108,28 @@ def main() -> None:
     grading_config = (
         config.get("grading", {}) if isinstance(config.get("grading"), dict) else {}
     )
+    benchmark_prompt_profile = (
+        "amazon_esci"
+        if args.benchmark in {"amazon_product_search", "amazon_product_search_calibration"}
+        else "default"
+    )
+    prompt_profile_name = (
+        args.prompt_profile
+        or _string_or_none(grading_config.get("prompt_profile"))
+        or benchmark_prompt_profile
+    )
+    prompt_profile = get_prompt_profile(prompt_profile_name)
+    scale_labels = grading_config.get("scale_labels")
+    resolved_scale_labels = scale_labels if isinstance(scale_labels, dict) else prompt_profile[
+        "scale_labels"
+    ]
+    resolved_prompt_template = (
+        args.prompt_file
+        or _string_or_none(grading_config.get("prompt_file"))
+        or str(prompt_profile["template"])
+    )
+    if args.benchmark == "amazon_product_search" and not args.skip_calibration_gates:
+        _require_calibration_gates(args.output_dir)
 
     grader = Grader(
         fetcher=FileResultsFetcher(path=BENCHMARK_DATASETS[args.benchmark]),
@@ -85,7 +145,15 @@ def main() -> None:
         request_timeout=args.request_timeout
         if args.request_timeout is not None
         else _float_or_default(grading_config.get("request_timeout"), 60.0),
-        prompt_template=args.prompt_file or _string_or_none(grading_config.get("prompt_file")),
+        prompt_template=resolved_prompt_template,
+        scale_labels=resolved_scale_labels,
+        provider=args.provider
+        or _string_or_none(llm_config.get("provider"))
+        or "auto",
+        response_mode=args.response_mode
+        or _string_or_none(grading_config.get("response_mode"))
+        or "json_schema",
+        think=args.think if args.think is not None else _bool_or_none(llm_config.get("think")),
     )
     reporter = TerminalProgressReporter(label=f"validation:{args.benchmark}")
 
@@ -98,11 +166,6 @@ def main() -> None:
         retry_failures_from=args.retry_failures,
         progress_callback=reporter,
     )
-
-    summary_path = args.output_dir / f"{args.benchmark}-summary.json"
-    raw_path = args.output_dir / f"{args.benchmark}-aligned.json"
-    summary_path.write_text(json.dumps(result["summary"], indent=2), encoding="utf-8")
-    raw_path.write_text(json.dumps(result["aligned_rows"], indent=2), encoding="utf-8")
 
     print(json.dumps(result["summary"], indent=2))
     print(
@@ -129,10 +192,56 @@ def _float_or_default(value: object, default: float) -> float:
     return float(value) if isinstance(value, int | float) else default
 
 
+def _bool_or_none(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
 def _require_string(value: object, label: str) -> str:
     if isinstance(value, str) and value:
         return value
     raise SystemExit(f"Provide {label}.")
+
+
+def _require_calibration_gates(output_dir: Path) -> None:
+    """Require passing local and reference calibration gates before the full run."""
+    local_gate = _find_passing_gate(output_dir, "amazon_product_search_calibration-local-gate.json")
+    reference_gate = _find_passing_gate(
+        output_dir, "amazon_product_search_calibration-reference-gate.json"
+    )
+    if local_gate is None or reference_gate is None:
+        raise SystemExit(
+            "Full amazon_product_search runs are blocked until both local and reference "
+            "calibration gates have passed. Run the calibration benchmark first, or "
+            "use --skip-calibration-gates if you intentionally want to bypass this."
+        )
+
+
+def _find_passing_gate(output_dir: Path, filename: str) -> Path | None:
+    """Find a passing gate file in the output directory or nearby artifact roots."""
+    roots = [output_dir]
+    if output_dir.parent != output_dir:
+        roots.append(output_dir.parent)
+
+    seen: set[Path] = set()
+    for root in roots:
+        if root in seen or not root.exists():
+            continue
+        seen.add(root)
+        direct = root / filename
+        if direct.exists() and _gate_passed(direct):
+            return direct
+        for candidate in root.rglob(filename):
+            if _gate_passed(candidate):
+                return candidate
+    return None
+
+
+def _gate_passed(path: Path) -> bool:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return bool(payload.get("passed"))
 
 
 if __name__ == "__main__":

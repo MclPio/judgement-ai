@@ -8,7 +8,11 @@
     "amazon_product_search": {
       "dataset": "validate/data/amazon_product_search.json",
       "published": false
+    },
+    "amazon_product_search_calibration": {
+      "dataset": "validate/data/amazon_product_search_calibration.json",
+      "published": false
     }
   },
-  "notes": "Validation now centers on a local-only Amazon ESCI benchmark plus smoke. Download raw data into validate/data, derive the benchmark locally, and run validation against that dataset."
+  "notes": "Validation now centers on a local-only Amazon ESCI benchmark, a smaller calibration slice, and smoke. Download raw data into validate/data, derive both local datasets, and run calibration before the full benchmark."
 }

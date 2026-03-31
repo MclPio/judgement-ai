@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -56,7 +57,7 @@ def test_prepare_amazon_builds_expected_rows_with_locale_and_task_filters(tmp_pa
                 "description": "Steel bottle",
             },
         }
-    ]
+    ] 
 
 
 def test_prepare_amazon_fails_on_missing_metadata(tmp_path) -> None:
@@ -98,3 +99,53 @@ def test_download_amazon_downloads_default_files(monkeypatch, tmp_path) -> None:
     assert len(files) == 2
     assert any("shopping_queries_dataset_examples.parquet" in item[1] for item in downloaded)
     assert any("shopping_queries_dataset_products.parquet" in item[1] for item in downloaded)
+
+
+def test_prepare_amazon_main_writes_benchmark_calibration_and_report(monkeypatch, tmp_path) -> None:
+    source_path = tmp_path / "esci.csv"
+    source_path.write_text(
+        "query,product_id,esci_label,rank,product_title,product_brand,product_description,"
+        "product_locale,small_version\n"
+        "water bottle,p1,E,1,Insulated Bottle,Hydra,Steel bottle,us,1\n"
+        "water bottle,p2,S,2,Plastic Bottle,Hydra,Daily bottle,us,1\n"
+        "mug,p3,C,1,Cup Warmer,HeatCo,Warming plate,us,1\n"
+        "mug,p4,I,2,Garden Hose,FlowCo,Outdoor hose,us,1\n",
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "amazon_product_search.json"
+    calibration_path = tmp_path / "amazon_product_search_calibration.json"
+    report_path = tmp_path / "amazon_product_search_report.json"
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "prepare_amazon_product_search.py",
+            "--input",
+            str(source_path),
+            "--output",
+            str(output_path),
+            "--calibration-output",
+            str(calibration_path),
+            "--report-output",
+            str(report_path),
+            "--per-label",
+            "1",
+            "--calibration-per-label",
+            "1",
+        ],
+    )
+
+    prepare_amazon.main()
+
+    benchmark_payload = json.loads(output_path.read_text(encoding="utf-8"))
+    calibration_payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert len(benchmark_payload) == 4
+    assert all(item["benchmark"] == "amazon_product_search" for item in benchmark_payload)
+    assert len(calibration_payload) == 4
+    assert all(
+        item["benchmark"] == "amazon_product_search_calibration"
+        for item in calibration_payload
+    )
+    assert report_payload["candidate_total_rows"] == 4

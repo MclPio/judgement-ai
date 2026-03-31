@@ -8,7 +8,7 @@ from string import Formatter
 from typing import Any
 
 REQUIRED_PROMPT_FIELDS = {"query", "result_fields", "scale_labels"}
-OPTIONAL_PROMPT_FIELDS = {"domain_context"}
+OPTIONAL_PROMPT_FIELDS = {"domain_context", "output_instructions"}
 
 DEFAULT_SCALE_LABELS = {
     0: "Completely irrelevant - the result has no connection to the query.",
@@ -30,9 +30,7 @@ Your task is to grade how relevant the following search result is to the query.
 Use this scale:
 {scale_labels}
 
-First, write 2-3 sentences explaining your reasoning.
-Then output your score on a new line in exactly this format:
-SCORE: <number>
+{output_instructions}
 
 Query: {query}
 
@@ -42,12 +40,88 @@ Result:
 Reasoning:
 """
 
+DEFAULT_OUTPUT_INSTRUCTIONS = {
+    "text": (
+        "First, write 2-3 sentences explaining your reasoning.\n"
+        "Then output your score on a new line in exactly this format:\n"
+        "SCORE: <number>"
+    ),
+    "json_schema": (
+        "Respond with a JSON object matching the required schema.\n"
+        "Use a concise reasoning string and an integer score from the provided scale."
+    ),
+}
+
+AMAZON_ESCI_SCALE_LABELS = {
+    0: "Irrelevant - does not satisfy the shopping intent expressed by the query.",
+    1: (
+        "Complement - related or compatible add-on, accessory, or adjacent item, "
+        "but not the product the shopper is trying to buy."
+    ),
+    2: (
+        "Substitute - a different product that could plausibly satisfy the same "
+        "shopping need, but is not an exact or near-exact match."
+    ),
+    3: (
+        "Exact or near-exact match - directly satisfies the intended product search, "
+        "including important constraints such as brand, size, quantity, compatibility, "
+        "and exclusions."
+    ),
+}
+
+AMAZON_ESCI_PROMPT_TEMPLATE = """You are an ecommerce product-search relevance judge
+working with the Amazon ESCI taxonomy.
+{domain_context}
+Evaluate whether the product satisfies the shopping intent of the query.
+
+Use this ESCI-aligned scale:
+{scale_labels}
+
+Important judging rules:
+- Treat exact constraints seriously, including words like "without",
+  compatibility requirements, quantity, capacity, material, and pack size.
+- Treat brand constraints seriously when the query names a brand or product line.
+- Treat price ceilings like "$5 items" as real constraints, not hints.
+- Distinguish substitutes from complements carefully: accessories and add-ons are
+  complements, not substitutes.
+- Be conservative with short or ambiguous queries. Do not broaden intent from a
+  single letter or token fragment.
+- If the result only matches a broad topic while violating a key constraint, it
+  should not receive a high score.
+
+{output_instructions}
+
+Query: {query}
+
+Product:
+{result_fields}
+
+Reasoning:
+"""
+
+PROMPT_PROFILES = {
+    "default": {
+        "template": DEFAULT_PROMPT_TEMPLATE,
+        "scale_labels": DEFAULT_SCALE_LABELS,
+    },
+    "amazon_esci": {
+        "template": AMAZON_ESCI_PROMPT_TEMPLATE,
+        "scale_labels": AMAZON_ESCI_SCALE_LABELS,
+    },
+}
+
 
 def load_prompt_template(path: str | Path | None = None) -> str:
     """Return the default prompt or load a custom template from disk."""
     if path is None:
         return DEFAULT_PROMPT_TEMPLATE
-    return Path(path).read_text(encoding="utf-8")
+    raw_value = str(path)
+    if "\n" in raw_value or "{" in raw_value or "}" in raw_value:
+        return raw_value
+    candidate = Path(raw_value)
+    if candidate.exists():
+        return candidate.read_text(encoding="utf-8")
+    return raw_value
 
 
 def validate_prompt_template(template: str) -> None:
@@ -118,6 +192,26 @@ def render_domain_context(domain_context: str | None) -> str:
     return f"Domain context:\n{domain_context.strip()}\n"
 
 
+def render_output_instructions(response_mode: str) -> str:
+    """Render mode-specific output instructions for the active response mode."""
+    try:
+        return DEFAULT_OUTPUT_INSTRUCTIONS[response_mode]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported response_mode: {response_mode!r}") from exc
+
+
+def get_prompt_profile(name: str | None) -> dict[str, Any]:
+    """Resolve a named prompt profile."""
+    profile_name = name or "default"
+    try:
+        return PROMPT_PROFILES[profile_name]
+    except KeyError as exc:
+        available = ", ".join(sorted(PROMPT_PROFILES))
+        raise ValueError(
+            f"Unsupported prompt profile {profile_name!r}. Available: {available}."
+        ) from exc
+
+
 def build_prompt(
     *,
     query: str,
@@ -125,6 +219,7 @@ def build_prompt(
     scale_labels: dict[int, str] | None = None,
     domain_context: str | None = None,
     prompt_template: str | None = None,
+    response_mode: str = "text",
 ) -> str:
     """Build a fully formatted grading prompt."""
     labels = scale_labels or DEFAULT_SCALE_LABELS
@@ -140,4 +235,5 @@ def build_prompt(
         result_fields=render_result_fields(result_fields),
         scale_labels=render_scale_labels(labels),
         domain_context=render_domain_context(domain_context),
+        output_instructions=render_output_instructions(response_mode),
     ).strip()

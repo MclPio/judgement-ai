@@ -213,6 +213,193 @@ Assumptions:
 - The focus is reliability and operator workflow, not benchmark methodology changes
 - Documentation sync is part of the milestone, not an optional follow-up
 
+### Milestone 8: Amazon Benchmark Quality And Calibration
+
+Purpose:
+
+- keep Amazon ESCI as the benchmark source
+- improve the derived slice so it stays deterministic but becomes less query-skewed
+- add a smaller fixed calibration slice so broken prompt/model setups are caught before another long run
+
+Tasks:
+
+- Replace the current per-label sampler with a deterministic round-robin sampler by query within each label
+- Keep benchmark defaults:
+  - source: Amazon ESCI
+  - locale: `us`
+  - reduced Task 1 only
+  - target size: `200`
+  - per-label target: `50`
+- Use this sampling rule:
+  - group rows by `human_score`
+  - within each label, group rows by `query`
+  - sort queries by `query_id`, then rows within query by `rank`, then `doc_id`
+  - select one row per query per pass until the per-label cap is reached
+- Add a second derived artifact:
+  - `amazon_product_search_calibration.json`
+  - fixed size: `48` rows
+  - `12` rows per label
+  - generated with the same deterministic round-robin logic
+- Add a benchmark derivation report printed by the prep script and saved as JSON with:
+  - total candidates
+  - per-label counts
+  - unique query count
+  - top query frequencies
+  - title/brand/description coverage and blank-ish counts
+- Do not hand-curate or manually remove hard queries; improve the derivation policy instead
+
+Verification:
+
+- Rerunning derivation with the same source files yields byte-identical benchmark JSON
+- The 200-row slice remains label-balanced
+- Query concentration is materially reduced versus the current slice
+- The calibration slice is stable and reproducible
+
+### Milestone 9: Amazon-Specific Structured Judge
+
+Purpose:
+
+- stop using a generic IR relevance prompt for an ecommerce ESCI benchmark
+- eliminate most parse failures with structured output
+- make the local Qwen/Ollama path explicit instead of relying on prompt hacks
+
+Tasks:
+
+- Add an `amazon_esci` prompt profile for validation
+- Make Amazon validation default to ESCI-aware labels:
+  - `0`: Irrelevant, does not satisfy the shopping intent
+  - `1`: Complement, related add-on/accessory but not the product sought
+  - `2`: Substitute, different product that plausibly satisfies the same shopping need
+  - `3`: Exact or near-exact match to the intended product
+- Ensure Amazon validation prompt rules explicitly handle:
+  - hard constraints like `without`, compatibility, quantity, capacity, and material
+  - brand constraints
+  - price ceilings like `$5 items`
+  - size and age qualifiers like `toddler` vs `youth`
+  - short or ambiguous queries conservatively
+  - no broad intent inflation from a single character or partial token
+- Add structured output mode as the default validation path:
+  - schema contains at minimum `score` and `reasoning`
+  - optional `refusal` or `notes` field is allowed
+- Add provider-aware output control:
+  - `llm.provider`: `auto | ollama | openai_compatible`
+  - `grading.response_mode`: `json_schema | text`
+  - `llm.think: false` support for Ollama-backed runs
+- Use `json_schema` by default when supported, with text parsing only as fallback
+- Keep a text fallback parser, but harden it to accept mild score variants only in fallback mode:
+  - `Score: 1`
+  - `**Relevance Score:** 1`
+  - still reject ambiguous or multi-score outputs
+- Keep `temperature = 0`; do not add temperature tuning work in this milestone
+
+Expected interfaces:
+
+- Shared grader options:
+  - `provider`
+  - `response_mode`
+  - `think`
+- Validation config:
+  - `llm.provider`
+  - `llm.think`
+  - `grading.response_mode`
+  - `grading.prompt_profile`
+- Validation runner options:
+  - `--provider`
+  - `--response-mode`
+  - `--think` and `--no-think`, or an equivalent explicit false-setting flag
+
+Verification:
+
+- Structured-output validation runs produce parseable output without regex dependence on supported providers
+- The Ollama path can disable thinking explicitly
+- Amazon validation uses ESCI semantics by default
+- `smoke` passes with structured output enabled
+
+### Milestone 10: Live Validation Artifacts And Rerun Gates
+
+Purpose:
+
+- make long runs observable while they are happening
+- make failures immediately inspectable
+- prevent another full benchmark run until prompt/model behavior is sane on a smaller gate
+
+Tasks:
+
+- Write validation artifacts incrementally during the run:
+  - append failures immediately
+  - rewrite summary after each completed item
+  - rewrite aligned rows after each completed item for validation runs
+- Add a lightweight benchmark-analysis artifact after each run with:
+  - failure counts by type
+  - parse failures with empty vs non-empty raw output
+  - AI score distribution
+  - per-query failure concentration
+  - score-collapse warnings
+- Update the runbook workflow to:
+  1. run `smoke`
+  2. run the `48`-row calibration slice locally
+  3. run the same calibration slice with a stronger hosted reference judge
+  4. only then run the full `200`-row local benchmark
+- Add a documented two-track validation setup:
+  - `validation.local.yaml` for local Ollama/Qwen
+  - `validation.reference.yaml.example` for a stronger OpenAI-compatible sanity run
+- Update the recommended `validation.local.yaml` to:
+
+```yaml
+llm:
+  base_url: http://localhost:11434/v1
+  api_key: null
+  model: qwen3.5:9b
+  provider: ollama
+  think: false
+
+grading:
+  max_workers: 1
+  passes: 1
+  max_retries: 1
+  request_timeout: 300
+  response_mode: json_schema
+  prompt_profile: amazon_esci
+```
+
+- Add these calibration gates before the next full run:
+  - local calibration:
+    - timeout failures: `0`
+    - total failures: `<= 5%`
+    - score distribution uses at least `3` of `4` labels
+    - no single AI score bucket exceeds `70%` of scored rows
+  - reference calibration:
+    - timeout failures: `0`
+    - parse failures: `0`
+    - no score collapse
+    - Spearman `>= 0.50`
+- If the reference calibration fails, stop and revisit benchmark and prompt design before another full run
+- If the reference passes but local fails, treat it as a local-model limitation rather than a benchmark validity problem
+
+Verification:
+
+- The failures file appears live during runs
+- Summary and aligned files reflect current state before run completion
+- The local config avoids wasted inline retries
+- Calibration gate logic blocks full reruns when the setup is still obviously broken
+
+Documentation sync:
+
+- `docs/amazon-benchmark.md` must describe the improved deterministic sampling policy and the calibration slice
+- `docs/validation-runbook.md` must document the two-track local/reference workflow and rerun gates
+- `README.md` and `AGENT.md` must reflect structured output, ESCI-specific judging, and live artifact behavior once implemented
+
+Assumptions:
+
+- Amazon ESCI remains the benchmark source
+- The current Amazon slice is reproducible but not yet a strong headline benchmark slice
+- Sampling will be improved rather than manually curating rows
+- Validation will use a two-track workflow:
+  - local model as the operator workflow
+  - stronger hosted reference model as the sanity-check path
+- Structured output is the primary path, not prompt-only text parsing
+- `temperature = 0` stays fixed and is not treated as the main cause of the failed run
+
 ## Branching And Review
 
 - Prefer one milestone per branch or PR

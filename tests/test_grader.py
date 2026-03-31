@@ -30,7 +30,16 @@ class DummyResponse:
         return self.payload
 
 
-def make_grader(*, fetcher: StaticFetcher | None = None, passes: int = 1) -> Grader:
+def make_grader(
+    *,
+    fetcher: StaticFetcher | None = None,
+    passes: int = 1,
+    provider: str = "openai_compatible",
+    response_mode: str = "text",
+    think: bool | None = None,
+    max_retries: int = 3,
+    request_timeout: float = 60.0,
+) -> Grader:
     return Grader(
         fetcher=fetcher
         or StaticFetcher(
@@ -49,6 +58,11 @@ def make_grader(*, fetcher: StaticFetcher | None = None, passes: int = 1) -> Gra
         llm_model="gpt-test",
         passes=passes,
         max_workers=4,
+        max_retries=max_retries,
+        request_timeout=request_timeout,
+        provider=provider,
+        response_mode=response_mode,
+        think=think,
     )
 
 
@@ -75,6 +89,18 @@ def test_parse_response_rejects_out_of_range_score() -> None:
 
     with pytest.raises(ParseError, match="outside the allowed range"):
         grader.parse_response("Reasoning first.\nSCORE: 10")
+
+
+def test_parse_response_accepts_score_variants_in_fallback_mode() -> None:
+    grader = make_grader()
+
+    score, reasoning = grader.parse_response(
+        "**Relevance Score:** 1\nBrand mismatch.",
+        allow_variants=True,
+    )
+
+    assert score == 1
+    assert reasoning == ""
 
 
 def test_select_final_score_prefers_majority() -> None:
@@ -112,6 +138,57 @@ def test_call_llm_uses_openai_compatible_payload(monkeypatch) -> None:
     assert captured["json"]["temperature"] == 0
     assert captured["json"]["messages"][0]["content"] == "Prompt text"
     assert captured["timeout"] == 60.0
+
+
+def test_call_llm_uses_openai_json_schema_payload(monkeypatch) -> None:
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return DummyResponse(
+            {"choices": [{"message": {"content": '{"score": 2, "reasoning": "Clear fit."}'}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = make_grader(response_mode="json_schema")
+    response = grader._call_llm(prompt="Prompt text")
+
+    assert response == {"score": 2, "reasoning": "Clear fit."}
+    assert captured["url"] == "https://api.example.com/v1/chat/completions"
+    assert captured["json"]["response_format"]["type"] == "json_schema"
+
+
+def test_call_llm_uses_ollama_native_api_for_structured_output(monkeypatch) -> None:
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return DummyResponse(
+            {"message": {"content": '{"score": 3, "reasoning": "Exact match."}'}}
+        )
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = Grader(
+        fetcher=StaticFetcher({}),
+        llm_base_url="http://localhost:11434/v1",
+        llm_api_key=None,
+        llm_model="qwen3.5:9b",
+        provider="ollama",
+        response_mode="json_schema",
+        think=False,
+    )
+    response = grader._call_llm(prompt="Prompt text")
+
+    assert response == {"score": 3, "reasoning": "Exact match."}
+    assert captured["url"] == "http://localhost:11434/api/chat"
+    assert captured["json"]["think"] is False
+    assert captured["json"]["format"]["required"] == ["score", "reasoning"]
 
 
 def test_grade_returns_scored_results(monkeypatch) -> None:
@@ -186,6 +263,43 @@ def test_grade_retries_failures_logs_failed_items_and_continues(monkeypatch, tmp
     assert "raw_response" in payload[0]
 
 
+def test_grade_writes_failures_incrementally(monkeypatch, tmp_path) -> None:
+    failed_log_path = tmp_path / "failed.json"
+    seen = {}
+    responses = iter(
+        [
+            DummyResponse({"choices": [{"message": {"content": "Missing strict output"}}]}),
+            DummyResponse({"choices": [{"message": {"content": "Useful result.\nSCORE: 2"}}]}),
+        ]
+    )
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        return next(responses)
+
+    def item_callback(item):
+        if item.__class__.__name__ == "GradeFailure":
+            seen["payload"] = json.loads(failed_log_path.read_text(encoding="utf-8"))
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    fetcher = StaticFetcher(
+        {
+            "vitamin b6": [
+                SearchResult(doc_id="bad", rank=1, fields={"title": "Unknown"}),
+                SearchResult(doc_id="good", rank=2, fields={"title": "Vitamin B6 100mg"}),
+            ]
+        }
+    )
+    grader = make_grader(fetcher=fetcher, max_retries=1)
+    grader.grade(
+        queries=["vitamin b6"],
+        failed_log_path=failed_log_path,
+        item_callback=item_callback,
+    )
+
+    assert seen["payload"][0]["doc_id"] == "bad"
+
+
 def test_grade_respects_configured_timeout_and_retry_count(monkeypatch, tmp_path) -> None:
     calls = {"count": 0, "timeout": None}
 
@@ -211,6 +325,7 @@ def test_grade_respects_configured_timeout_and_retry_count(monkeypatch, tmp_path
         max_workers=1,
         max_retries=1,
         request_timeout=120.0,
+        provider="openai_compatible",
     )
 
     failed_log_path = tmp_path / "failed.json"
@@ -422,3 +537,19 @@ def test_grade_emits_failure_progress_event(monkeypatch) -> None:
     )
 
     assert "item_failed" in [event.event for event in events]
+
+
+def test_grade_parses_structured_response_end_to_end(monkeypatch) -> None:
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        return DummyResponse(
+            {"choices": [{"message": {"content": '{"score": 3, "reasoning": "Exact fit."}'}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = make_grader(response_mode="json_schema")
+    results = grader.grade(queries=["vitamin b6"], failed_log_path=None)
+
+    assert results[0].score == 3
+    assert results[0].reasoning == "Exact fit."

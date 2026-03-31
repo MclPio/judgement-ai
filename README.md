@@ -52,22 +52,24 @@ judgement_ai/
 The repository now includes an Amazon-focused validation workflow under [validate](/Users/mclpio/repos/judgement-ai/validate):
 
 - `smoke` for fast local verification
+- `amazon_product_search_calibration` for fast Amazon sanity checks
 - `amazon_product_search` for the real benchmark
 
-Benchmark data is now local-only by default. Raw Amazon downloads and the derived benchmark dataset live under `validate/data/` and are gitignored. The repo commits the benchmark code and docs, not the generated benchmark data.
+Benchmark data is now local-only by default. Raw Amazon downloads and the derived benchmark datasets live under `validate/data/` and are gitignored. The repo commits the benchmark code and docs, not the generated benchmark data.
 
 Runbook summary:
 
 1. Download Amazon ESCI data
-2. Build the local `amazon_product_search` benchmark dataset
+2. Build the local `amazon_product_search`, calibration, and report artifacts
 3. Run `smoke` against your OpenAI-compatible endpoint
-4. Run `amazon_product_search`
-5. Review saved artifacts and observed metrics
+4. Run `amazon_product_search_calibration` locally
+5. Run the same calibration slice with a stronger reference judge
+6. Only then run `amazon_product_search`
+7. Review saved artifacts, analysis, and observed metrics
 
 See [docs/validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md) for the exact workflow and example commands.
 
-The runbook now includes both OpenRouter and Ollama examples. For local 8B models, start with `smoke` and use a small worker count before attempting the canonical benchmarks.
-For slower local models, the recommended benchmark flow is a mostly single-pass run with `max_retries: 1`, followed by `--resume` or `--retry-failures` sweeps instead of burning time on inline retries.
+The runbook now includes both OpenRouter and Ollama examples. For local Qwen/Ollama runs, use the Amazon ESCI prompt profile, JSON-schema output, `provider: ollama`, `think: false`, a small worker count, and a mostly single-pass run with `max_retries: 1`, followed by `--resume` or `--retry-failures` sweeps instead of burning time on inline retries.
 
 ## Not yet published
 
@@ -81,10 +83,10 @@ Implemented:
 
 - prompt system with validation
 - Elasticsearch and pre-fetched results fetchers
-- LLM grading with configurable retries, timeouts, concurrency, and failure logging
+- LLM grading with configurable retries, timeouts, concurrency, failure logging, and provider-aware response modes
 - incremental JSON/CSV outputs and resume support
 - CLI config loading and grade command
-- Amazon-only validation workflow plus smoke, progress reporting, and retry/resume recovery
+- Amazon-only validation workflow plus smoke, calibration, progress reporting, retry/resume recovery, live artifacts, and analysis reports
 
 Pending before benchmark publication:
 

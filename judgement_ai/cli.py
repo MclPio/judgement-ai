@@ -45,6 +45,9 @@ def main() -> None:
 @click.option("--passes", type=int)
 @click.option("--request-timeout", type=float)
 @click.option("--max-retries", type=int)
+@click.option("--provider", type=click.Choice(["auto", "ollama", "openai_compatible"]))
+@click.option("--response-mode", type=click.Choice(["json_schema", "text"]))
+@click.option("--think/--no-think", default=None)
 @click.option("--prompt-file", type=click.Path(exists=True, path_type=Path))
 @click.option("--resume", is_flag=True, default=False)
 def grade(
@@ -63,6 +66,9 @@ def grade(
     passes: int | None,
     request_timeout: float | None,
     max_retries: int | None,
+    provider: str | None,
+    response_mode: str | None,
+    think: bool | None,
     prompt_file: Path | None,
     resume: bool,
 ) -> None:
@@ -123,6 +129,9 @@ def grade(
         if request_timeout is not None
         else _config_float(grading_config, "request_timeout")
         or 60.0,
+        provider=provider or _config_str(llm_config, "provider") or "auto",
+        response_mode=response_mode or _config_str(grading_config, "response_mode") or "text",
+        think=think if think is not None else _config_bool(llm_config, "think"),
         prompt_template=str(prompt_file)
         if prompt_file is not None
         else _config_str(grading_config, "prompt_file"),
@@ -194,3 +203,8 @@ def _config_float(config: dict[str, Any], key: str) -> float | None:
     if isinstance(value, int | float):
         return float(value)
     return None
+
+
+def _config_bool(config: dict[str, Any], key: str) -> bool | None:
+    value = config.get(key)
+    return value if isinstance(value, bool) else None

@@ -1,0 +1,13 @@
+llm:
+  base_url: https://openrouter.ai/api/v1
+  api_key: ${OPENROUTER_API_KEY}
+  model: your-reference-model
+  provider: openai_compatible
+
+grading:
+  max_workers: 4
+  passes: 1
+  max_retries: 1
+  request_timeout: 180
+  response_mode: json_schema
+  prompt_profile: amazon_esci

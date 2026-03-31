@@ -8,6 +8,7 @@ import pytest
 from judgement_ai.grader import Grader
 from judgement_ai.validation import (
     ValidationFetcher,
+    build_validation_analysis,
     compute_exact_agreement,
     compute_metrics,
     compute_spearman,
@@ -35,6 +36,7 @@ def make_grader() -> Grader:
         llm_model="gpt-test",
         max_workers=2,
         passes=1,
+        provider="openai_compatible",
     )
 
 
@@ -65,6 +67,21 @@ def test_compute_metrics_counts_failures() -> None:
     assert metrics["num_failed_rows"] == 1
 
 
+def test_build_validation_analysis_detects_score_collapse() -> None:
+    analysis = build_validation_analysis(
+        [
+            {"query": "a", "ai_score": 1},
+            {"query": "b", "ai_score": 1},
+            {"query": "c", "ai_score": 1},
+            {"query": "d", "failure": {"failure_type": "parse_error", "raw_response": ""}},
+        ]
+    )
+
+    assert analysis["failure_counts_by_type"]["parse_error"] == 1
+    assert analysis["parse_failures_empty_raw"] == 1
+    assert analysis["warnings"]
+
+
 def test_run_validation_benchmark_writes_completed_summary(monkeypatch, tmp_path) -> None:
     responses = iter(
         [
@@ -90,6 +107,8 @@ def test_run_validation_benchmark_writes_completed_summary(monkeypatch, tmp_path
     assert result["summary"]["status"] == "completed"
     assert result["summary"]["metrics"]["num_rows"] == 3
     assert (tmp_path / "smoke-raw-judgments.json").exists()
+    assert (tmp_path / "smoke-aligned.json").exists()
+    assert (tmp_path / "smoke-analysis.json").exists()
     assert result["summary"]["max_retries"] == 3
     assert result["summary"]["request_timeout"] == 60.0
 
@@ -156,6 +175,7 @@ def test_run_validation_benchmark_fails_canonical_partial_run(monkeypatch, tmp_p
 
     assert result["summary"]["status"] == "failed"
     assert result["summary"]["metrics"]["num_failed_rows"] > 0
+    assert (tmp_path / "amazon_product_search-analysis.json").exists()
 
 
 def test_run_validation_benchmark_resume_skips_completed_rows(monkeypatch, tmp_path) -> None:
@@ -264,6 +284,138 @@ def test_run_validation_benchmark_retry_failures_only_reruns_failed_rows(
     assert not (tmp_path / "smoke-failures.json").exists()
 
 
+def test_run_validation_benchmark_updates_live_artifacts(monkeypatch, tmp_path) -> None:
+    responses = iter(
+        [
+            DummyResponse("Missing strict output"),
+            DummyResponse("Relevant.\nSCORE: 2"),
+            DummyResponse("Direct match.\nSCORE: 3"),
+        ]
+    )
+    snapshots = []
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        return next(responses)
+
+    def progress(event):
+        if event.event in {"item_failed", "item_completed"}:
+            snapshots.append(
+                {
+                    "summary": json.loads(
+                        (tmp_path / "smoke-summary.json").read_text(encoding="utf-8")
+                    ),
+                    "aligned_len": len(
+                        json.loads(
+                            (tmp_path / "smoke-aligned.json").read_text(encoding="utf-8")
+                        )
+                    ),
+                }
+            )
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    run_validation_benchmark(
+        benchmark="smoke",
+        dataset_path=Path("validate/datasets/smoke.json"),
+        output_dir=tmp_path,
+        grader=make_grader(),
+        progress_callback=progress,
+    )
+
+    assert snapshots
+    assert any(item["summary"]["status"] == "running" for item in snapshots)
+    assert all(item["aligned_len"] == 3 for item in snapshots)
+
+
+def test_run_validation_benchmark_writes_local_calibration_gate(monkeypatch, tmp_path) -> None:
+    dataset_path = tmp_path / "amazon_product_search_calibration.json"
+    dataset_path.write_text(
+        json.dumps(
+            [
+                {
+                    "benchmark": "amazon_product_search_calibration",
+                    "query_id": "q1",
+                    "query": "wireless headphones",
+                    "doc_id": "p1",
+                    "rank": 1,
+                    "human_score": 3,
+                    "fields": {"title": "Wireless Headphones"},
+                },
+                {
+                    "benchmark": "amazon_product_search_calibration",
+                    "query_id": "q2",
+                    "query": "wireless headphones",
+                    "doc_id": "p2",
+                    "rank": 2,
+                    "human_score": 1,
+                    "fields": {"title": "Headphone Case"},
+                },
+                {
+                    "benchmark": "amazon_product_search_calibration",
+                    "query_id": "q3",
+                    "query": "wireless headphones",
+                    "doc_id": "p3",
+                    "rank": 3,
+                    "human_score": 2,
+                    "fields": {"title": "Bluetooth Earbuds"},
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    responses = iter(
+        [
+            DummyResponse('{"score": 3, "reasoning": "Exact"}'),
+            DummyResponse('{"score": 1, "reasoning": "Complement"}'),
+            DummyResponse('{"score": 2, "reasoning": "Substitute"}'),
+        ]
+    )
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        response = next(responses)
+
+        class OllamaResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"message": {"content": response.content}}
+
+        return OllamaResponse()
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = Grader(
+        fetcher=ValidationFetcher([]),
+        llm_base_url="http://localhost:11434/v1",
+        llm_api_key=None,
+        llm_model="qwen3.5:9b",
+        provider="ollama",
+        response_mode="json_schema",
+        think=False,
+    )
+
+    result = run_validation_benchmark(
+        benchmark="amazon_product_search_calibration",
+        dataset_path=dataset_path,
+        output_dir=tmp_path,
+        grader=grader,
+    )
+
+    gate_payload = json.loads(
+        (tmp_path / "amazon_product_search_calibration-local-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert result["summary"]["gate_path"]
+    assert gate_payload["track"] == "local"
+    assert gate_payload["passed"] is True
+
+
 def test_run_validation_benchmark_retry_sweep_requires_existing_raw_judgments(
     tmp_path,
 ) -> None:
@@ -299,3 +451,4 @@ def test_results_index_mentions_both_benchmarks() -> None:
 
     assert "smoke" in payload["benchmarks"]
     assert "amazon_product_search" in payload["benchmarks"]
+    assert "amazon_product_search_calibration" in payload["benchmarks"]
