@@ -111,6 +111,7 @@ def test_run_validation_benchmark_writes_completed_summary(monkeypatch, tmp_path
     assert (tmp_path / "smoke-analysis.json").exists()
     assert result["summary"]["max_retries"] == 3
     assert result["summary"]["request_timeout"] == 60.0
+    assert result["summary"]["temperature"] == 0.0
 
 
 def test_run_validation_benchmark_passes_progress_callback(monkeypatch, tmp_path) -> None:

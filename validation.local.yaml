@@ -8,6 +8,7 @@ llm:
 grading:
   max_workers: 1
   passes: 1
+  temperature: 0
   max_retries: 1
   request_timeout: 300
   response_mode: json_schema

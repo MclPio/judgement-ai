@@ -105,6 +105,7 @@ grader = Grader(
     llm_base_url="https://api.openai.com/v1",
     llm_api_key="YOUR_API_KEY",
     llm_model="gpt-5.1",
+    temperature=0,
     response_mode="json_schema",
     max_retries=1,
 )
@@ -148,6 +149,37 @@ magnesium for sleep
       "fields": {
         "title": "Vitamin B6 100mg",
         "description": "Supports energy metabolism"
+      }
+    }
+  ]
+}
+```
+
+This shape is intentionally simple and fixed for v1:
+
+- top-level keys are query strings
+- each value is a list of candidate results for that query
+- `doc_id`, `rank`, and `fields` are the supported fields the loader cares about
+
+Important behavior:
+
+- for file-backed grading, the queries you pass to `grade(...)` must match those top-level keys
+- the grader uses `doc_id`, `rank`, and `fields`
+- additional top-level attributes are ignored
+- if you want extra document metadata to appear in the prompt, put it inside `fields`
+
+For example, this will be visible to the model:
+
+```json
+{
+  "vitamin b6": [
+    {
+      "doc_id": "123",
+      "rank": 1,
+      "fields": {
+        "title": "Vitamin B6 100mg",
+        "description": "Supports energy metabolism",
+        "brand": "Example Labs"
       }
     }
   ]
@@ -203,9 +235,9 @@ Use `--force` to overwrite without a prompt.
 
 ## Configuration
 
-An example config file is included at [judgement-ai.yaml.example](/Users/mclpio/repos/judgement-ai/judgement-ai.yaml.example).
+An example config file is included at [judgement-ai.yaml.example](judgement-ai.yaml.example).
 
-For a fuller configuration reference, see [configuration.md](/Users/mclpio/repos/judgement-ai/docs/configuration.md).
+For a fuller configuration reference, see [configuration.md](docs/configuration.md).
 
 ## Providers
 
@@ -216,13 +248,17 @@ The tool supports:
 
 Behavior notes:
 
-- `temperature` is fixed at `0`
+- `temperature` defaults to `0`, but is configurable through the library, CLI, and config file
 - `json_schema` mode is supported when the provider and model support structured output
 - some routed providers may require `text` mode even when the underlying model supports structured output elsewhere
 
+For CLI runs, use `--temperature`. For config-driven runs, set `grading.temperature`.
+
+Prompt and grading tunings such as `prompt_file`, `response_mode`, temperature, retries, and timeouts are documented in [configuration.md](docs/configuration.md).
+
 ## License
 
-This project is licensed under [Elastic License 2.0](/Users/mclpio/repos/judgement-ai/LICENSE).
+This project is licensed under [Elastic License 2.0](LICENSE).
 
 Plain-English intent:
 
@@ -234,22 +270,22 @@ This is source-available, not OSI open source.
 
 ## Optional Validation
 
-The repo includes optional validation tooling against Amazon ESCI under [validate](/Users/mclpio/repos/judgement-ai/validate), but validation is not required to use the grading pipeline.
+The repo includes optional validation tooling against Amazon ESCI under [`validate/`](validate), but validation is not required to use the grading pipeline.
 
-If you want to run the benchmark workflow, start with [validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md).
+If you want to run the benchmark workflow, start with [validation-runbook.md](docs/validation-runbook.md).
 
 ## Documentation
 
 User-facing docs:
 
-- [configuration.md](/Users/mclpio/repos/judgement-ai/docs/configuration.md)
-- [validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md)
-- [amazon-benchmark.md](/Users/mclpio/repos/judgement-ai/docs/amazon-benchmark.md)
+- [configuration.md](docs/configuration.md)
+- [validation-runbook.md](docs/validation-runbook.md)
+- [amazon-benchmark.md](docs/amazon-benchmark.md)
 
 Contributor-facing docs:
 
-- [AGENT.md](/Users/mclpio/repos/judgement-ai/AGENT.md)
-- [PIPELINE.md](/Users/mclpio/repos/judgement-ai/PIPELINE.md)
+- [AGENT.md](AGENT.md)
+- [PIPELINE.md](PIPELINE.md)
 
 ## Development
 

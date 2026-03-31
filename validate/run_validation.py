@@ -46,6 +46,7 @@ def main() -> None:
     )
     parser.add_argument("--workers", type=int, help="Maximum concurrent workers.")
     parser.add_argument("--passes", type=int, help="Number of grading passes.")
+    parser.add_argument("--temperature", type=float, help="Sampling temperature for the LLM.")
     parser.add_argument(
         "--request-timeout",
         type=float,
@@ -139,6 +140,9 @@ def main() -> None:
         domain_context=args.domain or _string_or_none(grading_config.get("domain_context")),
         max_workers=args.workers or _int_or_default(grading_config.get("max_workers"), 10),
         passes=args.passes or _int_or_default(grading_config.get("passes"), 1),
+        temperature=args.temperature
+        if args.temperature is not None
+        else _float_or_default(grading_config.get("temperature"), 0.0),
         max_retries=args.max_retries
         if args.max_retries is not None
         else _int_or_default(grading_config.get("max_retries"), 1),

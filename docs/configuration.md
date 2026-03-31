@@ -2,7 +2,7 @@
 
 This guide covers the main runtime configuration for `judgement-ai`.
 
-If you just want to get started, copy [judgement-ai.yaml.example](/Users/mclpio/repos/judgement-ai/judgement-ai.yaml.example) and adjust the values.
+If you just want to get started, copy [judgement-ai.yaml.example](../judgement-ai.yaml.example) and adjust the values.
 
 ## File Layout
 
@@ -27,6 +27,7 @@ grading:
   domain_context: "Nutritional supplements catalog"
   max_workers: 10
   passes: 1
+  temperature: 0
   max_retries: 1
   request_timeout: 60
   response_mode: text
@@ -106,6 +107,17 @@ search:
 
 `top_n` only applies to Elasticsearch.
 
+For file-backed grading, the query strings you pass must match the top-level keys in `results.json`.
+
+Supported result item fields for v1 are:
+
+- `doc_id`
+- `rank`
+- `fields`
+
+Anything you want the model to see should live under `fields`.
+Other top-level attributes are ignored by the fetcher.
+
 ## `grading`
 
 ### Scale
@@ -133,6 +145,17 @@ Number of grading passes per item.
 
 Default is `1`.
 
+### `temperature`
+
+Sampling temperature for the model.
+
+- `0` is the safest default for reproducible grading
+- higher values allow more variation, but can reduce consistency across runs
+
+For judgment-list generation, `0` or a very low value is usually the right starting point.
+
+Set this in config with `grading.temperature`, or override it per run with `--temperature`.
+
 ### `max_retries`
 
 Attempts per item before it is recorded as a failure.
@@ -158,6 +181,19 @@ If you see provider `400` errors on routed services, test `text` mode.
 ### `prompt_file`
 
 Optional path to a custom prompt template.
+
+Required placeholders:
+
+- `{query}`
+- `{result_fields}`
+- `{scale_labels}`
+
+Optional placeholders:
+
+- `{domain_context}`
+- `{output_instructions}`
+
+This is the main prompt override hook for the core tool.
 
 ## `output`
 
@@ -214,6 +250,7 @@ llm:
 grading:
   max_workers: 4
   passes: 1
+  temperature: 0
   max_retries: 1
   request_timeout: 60
   response_mode: json_schema
@@ -232,6 +269,7 @@ llm:
 grading:
   max_workers: 1
   passes: 1
+  temperature: 0
   max_retries: 1
   request_timeout: 300
   response_mode: json_schema

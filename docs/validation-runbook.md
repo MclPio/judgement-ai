@@ -84,6 +84,7 @@ llm:
 grading:
   max_workers: 1
   passes: 1
+  temperature: 0
   max_retries: 1
   request_timeout: 300
   response_mode: json_schema
@@ -102,19 +103,20 @@ llm:
 grading:
   max_workers: 4
   passes: 1
+  temperature: 0
   max_retries: 1
   request_timeout: 180
   response_mode: json_schema
   prompt_profile: amazon_esci
 ```
 
-The repo also includes [validation.reference.yaml.example](/Users/mclpio/repos/judgement-ai/validation.reference.yaml.example) as a starting point for the reference-model track.
+The repo also includes [validation.reference.yaml.example](../validation.reference.yaml.example) as a starting point for the reference-model track.
 
 Important:
 
 - The decisive reference verdict must use a **strong non-lite model**.
 - Do **not** use `lite`, `flash-lite`, or `mini-preview` class models as the only reference verdict.
-- Keep `temperature = 0` fixed. This runbook does not treat temperature as an active tuning variable.
+- Start with `temperature: 0` for validation unless you have a strong reason to explore variation.
 
 ## Step 4: Run Smoke
 
@@ -276,4 +278,4 @@ The local gate is diagnostic only.
 - Retry sweeps require an existing `<benchmark>-raw-judgments.json` file in the output directory.
 - Validation defaults to Amazon ESCI prompt semantics and JSON-schema output on supported providers.
 - The full benchmark is hard-blocked only when there is no **passing reference** calibration gate, unless you use `--skip-calibration-gates`.
-- Benchmark behavior is documented in [amazon-benchmark.md](/Users/mclpio/repos/judgement-ai/docs/amazon-benchmark.md).
+- Benchmark behavior is documented in [amazon-benchmark.md](amazon-benchmark.md).

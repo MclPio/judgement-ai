@@ -64,6 +64,7 @@ def main() -> None:
 @click.option("--top-n", type=int, help="Top N results to fetch from Elasticsearch.")
 @click.option("--workers", "max_workers", type=int, help="Maximum concurrent workers.")
 @click.option("--passes", type=int, help="Number of grading passes per item.")
+@click.option("--temperature", type=float, help="Sampling temperature for the LLM.")
 @click.option("--request-timeout", type=float, help="Provider request timeout in seconds.")
 @click.option("--max-retries", type=int, help="Attempts per item before logging a failure.")
 @click.option(
@@ -103,6 +104,7 @@ def grade(
     top_n: int | None,
     max_workers: int | None,
     passes: int | None,
+    temperature: float | None,
     request_timeout: float | None,
     max_retries: int | None,
     provider: str | None,
@@ -160,6 +162,7 @@ def grade(
         domain_context=domain_context,
         max_workers=max_workers,
         passes=passes,
+        temperature=temperature,
         request_timeout=request_timeout,
         max_retries=max_retries,
         provider=provider,
@@ -302,6 +305,7 @@ def _build_grader(
     domain_context: str | None,
     max_workers: int | None,
     passes: int | None,
+    temperature: float | None,
     request_timeout: float | None,
     max_retries: int | None,
     provider: str | None,
@@ -331,6 +335,10 @@ def _build_grader(
         scale_labels=scale_labels if isinstance(scale_labels, dict) else None,
         max_workers=max_workers or _config_int(grading_config, "max_workers") or 10,
         passes=passes or _config_int(grading_config, "passes") or 1,
+        temperature=temperature
+        if temperature is not None
+        else _config_float(grading_config, "temperature")
+        or 0.0,
         max_retries=max_retries
         if max_retries is not None
         else _config_int(grading_config, "max_retries")

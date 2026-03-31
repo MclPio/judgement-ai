@@ -193,6 +193,64 @@ def test_grade_command_accepts_timeout_and_retry_options(monkeypatch, tmp_path) 
     assert captured["timeout"] == 120.0
 
 
+def test_grade_command_accepts_temperature_option(monkeypatch, tmp_path) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+
+    results_file = tmp_path / "results.json"
+    results_file.write_text(
+        json.dumps(
+            {
+                "vitamin b6": [
+                    {"doc_id": "123", "rank": 1, "fields": {"title": "Vitamin B6 100mg"}}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "judgments.json"
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["temperature"] = json["temperature"]
+
+        class DummyResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"choices": [{"message": {"content": "Direct match.\nSCORE: 3"}}]}
+
+        return DummyResponse()
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "grade",
+            "--queries",
+            str(queries_path),
+            "--results-file",
+            str(results_file),
+            "--model",
+            "gpt-test",
+            "--api-key",
+            "test-key",
+            "--output",
+            str(output_path),
+            "--temperature",
+            "0.4",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["temperature"] == 0.4
+
+
 def test_grade_command_requires_input_source(tmp_path) -> None:
     queries_path = tmp_path / "queries.txt"
     queries_path.write_text("vitamin b6\n", encoding="utf-8")

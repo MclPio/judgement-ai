@@ -100,6 +100,7 @@ class Grader:
         prompt_template: str | None = None,
         max_retries: int = 3,
         request_timeout: float = 60.0,
+        temperature: float = 0.0,
         provider: str = "auto",
         response_mode: str = "text",
         think: bool | None = None,
@@ -116,6 +117,7 @@ class Grader:
         self.passes = passes
         self.max_retries = max_retries
         self.request_timeout = request_timeout
+        self.temperature = temperature
         self.provider = provider
         self.response_mode = response_mode
         self.think = think
@@ -130,6 +132,8 @@ class Grader:
             raise ValueError("passes must be at least 1.")
         if self.max_retries < 1:
             raise ValueError("max_retries must be at least 1.")
+        if self.temperature < 0:
+            raise ValueError("temperature must be greater than or equal to 0.")
         if self.provider not in {"auto", "ollama", "openai_compatible"}:
             raise ValueError("provider must be 'auto', 'ollama', or 'openai_compatible'.")
         if self.response_mode not in {"text", "json_schema"}:
@@ -414,7 +418,7 @@ class Grader:
 
         payload: dict[str, Any] = {
             "model": self.llm_model,
-            "temperature": 0,
+            "temperature": self.temperature,
             "messages": [{"role": "user", "content": prompt}],
         }
         if self.response_mode == "json_schema":
@@ -454,7 +458,7 @@ class Grader:
             "model": self.llm_model,
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
-            "options": {"temperature": 0},
+            "options": {"temperature": self.temperature},
         }
         if self.think is not None:
             payload["think"] = self.think

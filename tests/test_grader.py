@@ -45,6 +45,7 @@ def make_grader(
     think: bool | None = None,
     max_retries: int = 3,
     request_timeout: float = 60.0,
+    temperature: float = 0.0,
 ) -> Grader:
     return Grader(
         fetcher=fetcher
@@ -66,6 +67,7 @@ def make_grader(
         max_workers=4,
         max_retries=max_retries,
         request_timeout=request_timeout,
+        temperature=temperature,
         provider=provider,
         response_mode=response_mode,
         think=think,
@@ -146,6 +148,28 @@ def test_call_llm_uses_openai_compatible_payload(monkeypatch) -> None:
     assert captured["timeout"] == 60.0
 
 
+def test_call_llm_uses_configured_temperature(monkeypatch) -> None:
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        captured["json"] = json
+        return DummyResponse(
+            {"choices": [{"message": {"content": "Reasoning.\nSCORE: 2"}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = make_grader(temperature=0.35)
+    grader._call_llm(prompt="Prompt text")
+
+    assert captured["json"]["temperature"] == 0.35
+
+
+def test_grader_rejects_negative_temperature() -> None:
+    with pytest.raises(ValueError, match="temperature must be greater than or equal to 0"):
+        make_grader(temperature=-0.1)
+
+
 def test_call_llm_uses_openai_json_schema_payload(monkeypatch) -> None:
     captured = {}
 
@@ -188,12 +212,14 @@ def test_call_llm_uses_ollama_native_api_for_structured_output(monkeypatch) -> N
         provider="ollama",
         response_mode="json_schema",
         think=False,
+        temperature=0.2,
     )
     response = grader._call_llm(prompt="Prompt text")
 
     assert response == {"score": 3, "reasoning": "Exact match."}
     assert captured["url"] == "http://localhost:11434/api/chat"
     assert captured["json"]["think"] is False
+    assert captured["json"]["options"]["temperature"] == 0.2
     assert captured["json"]["format"]["required"] == ["score", "reasoning"]
 
 

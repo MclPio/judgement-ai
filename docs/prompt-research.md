@@ -26,7 +26,7 @@ Thomas et al. report that LLM performance "varies with prompt features" and also
 Implication for this repo:
 
 - We should treat prompt design as a first-class implementation milestone.
-- We should keep temperature fixed at `0`.
+- We should default temperature to `0` for reproducibility, while leaving room for a user override if needed.
 - We should validate user-supplied prompt templates before making any LLM calls.
 
 ### 2. Structured judgment instructions improve reliability
@@ -90,4 +90,3 @@ These are the implementation decisions we are adopting now:
 
 - The requirement to ask for reasoning before the score is supported directionally by LLM-as-judge literature and by the broader practice of using explanation-oriented judge prompts. In this repo we are adopting it as a design choice informed by those sources, not claiming any single paper proves this exact prompt is universally optimal.
 - We should still validate the final prompt empirically during the TREC benchmark phase rather than relying on literature alone.
-

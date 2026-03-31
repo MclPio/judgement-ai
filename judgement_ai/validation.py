@@ -431,6 +431,7 @@ def run_validation_benchmark(
             "base_url": grader.llm_base_url,
             "provider": grader.resolved_provider,
             "response_mode": grader.response_mode,
+            "temperature": grader.temperature,
             "passes": grader.passes,
             "workers": grader.max_workers,
             "request_timeout": grader.request_timeout,
