@@ -476,6 +476,138 @@ Assumptions:
 - local-model results are secondary evidence until the reference upper bound is known
 - `temperature = 0` remains fixed
 
+### Milestone 12: Launch Prep, Code Cleanup, And Release Hardening
+
+Purpose:
+
+- treat validation as supporting evidence rather than the core product mission
+- harden the library and CLI for real users before launch
+- reduce avoidable complexity, confusing defaults, and rough edges in the codebase
+- make the repo feel clean, stable, and intentional
+
+Product framing for this milestone:
+
+- the core repo mission is an automation pipeline for AI-generated judgment scores
+- the tool should be usable for search tuning, ranking experiments, offline grading, and other scoring workflows
+- validation work should remain available, but it must not dominate the release story or complicate the core tool experience
+
+Tasks:
+
+- Review the public library and CLI API for naming, consistency, and launch readiness
+- Remove dead code, stale milestone-era scaffolding, and one-off experimental paths that no longer help the launch story
+- Audit config, CLI flags, and defaults so they are predictable and minimally surprising
+- Tighten user-facing errors and help text:
+  - clear problem statement
+  - likely cause
+  - what to try next
+- Review module boundaries and simplify where needed:
+  - keep library-first design
+  - keep CLI thin
+  - avoid validation-specific behavior leaking into the core grading path
+- Add or improve tests for:
+  - core library paths
+  - CLI happy paths
+  - invalid config / invalid prompt / invalid provider setup
+  - resume and failure logging behavior
+- Ensure examples are clean and representative of the intended launch usage
+- Do a final code-quality sweep:
+  - naming
+  - comments
+  - docstrings
+  - imports
+  - duplication
+  - lightweight dependency discipline
+- Identify anything that should remain explicitly out of scope for v1 and document it instead of half-implementing it
+
+Verification:
+
+- the library API feels stable enough to document publicly
+- the CLI help output is understandable without reading the code
+- tests cover the main launch paths and major failure paths
+- there is no obvious stale or experimental behavior confusing the repo story
+- examples and configs still run against fixtures or documented setups
+
+Documentation sync:
+
+- `README.md` must reflect the simplified product framing
+- `AGENT.md` must reflect that launch quality of the core tool now takes priority over benchmark experimentation
+- `docs/validation-runbook.md` should remain available, but clearly secondary to the core usage docs
+
+Assumptions:
+
+- launch polish is now more important than adding new benchmark complexity
+- the repo should optimize for a clear first impression and reliable day-one usage
+- validation remains useful, but it is not the main product narrative
+
+### Milestone 13: Release Packaging, Docs Curation, And Launch Story
+
+Purpose:
+
+- decide what documentation belongs in the launch repo and what does not
+- produce a simple, approachable documentation set for first-time users
+- prepare the repository for public launch and package release
+
+Tasks:
+
+- Curate the markdown surface area of the repo:
+  - keep only the docs that materially help users or contributors
+  - archive, merge, or remove redundant milestone-era docs if they add noise
+- Define the release documentation structure:
+  - `README.md` as the main landing page
+  - concise setup and quickstart
+  - one or two deeper docs for configuration and validation
+  - no cluttered maze of overlapping markdown files
+- Rewrite `README.md` for launch:
+  - what the tool is
+  - what problem it solves
+  - what it does not do
+  - quickstart
+  - library example
+  - CLI example
+  - configuration example
+  - resume/failure behavior
+  - output formats
+  - limitations and expectations
+- Decide which docs should ship prominently, for example:
+  - core usage guide
+  - config guide
+  - optional validation runbook
+  - contributor/developer notes
+- Decide which docs should stay internal or be removed from the launch-facing surface
+- Review packaging and release assets:
+  - `pyproject.toml`
+  - version metadata
+  - license choice
+  - example config file
+  - publish checklist
+- Prepare for PyPI or release packaging:
+  - package metadata
+  - classifiers
+  - entry points
+  - install instructions
+  - release checklist
+- Make sure the repo homepage story is clean and simple enough that a new user can understand it in a few minutes
+
+Verification:
+
+- the final doc set is small, intentional, and easy to navigate
+- `README.md` can onboard a new user without requiring code spelunking
+- release metadata is complete enough for packaging
+- the launch story matches the actual capabilities of the tool
+- optional validation docs do not overshadow the core automation pipeline story
+
+Documentation sync:
+
+- `README.md` becomes the launch-facing source of truth
+- secondary docs must support the README instead of competing with it
+- `AGENT.md` and `PIPELINE.md` should remain contributor-focused, not user-facing clutter
+
+Assumptions:
+
+- simple docs are better than exhaustive docs for launch
+- the core release message should be “AI-powered judgment list generation,” not “benchmark lab”
+- some current markdown files may need to be merged, shortened, or removed before release
+
 ## Branching And Review
 
 - Prefer one milestone per branch or PR

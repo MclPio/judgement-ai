@@ -1,11 +1,12 @@
 llm:
   base_url: https://api.openai.com/v1
   api_key: ${OPENAI_API_KEY}
-  model: gpt-4o-mini
+  model: gpt-5.1
 
 search:
-  type: elasticsearch
   url: https://my-elastic/catalog
+  # Or use:
+  # results_file: results.json
   top_n: 24
 
 grading:
@@ -19,9 +20,13 @@ grading:
   domain_context: "Nutritional supplements catalog"
   max_workers: 10
   passes: 1
+  max_retries: 1
+  request_timeout: 60
+  response_mode: text
   prompt_file: null
 
 output:
   format: quepid_csv
   path: judgments.csv
 
+queries: queries.txt

@@ -83,6 +83,16 @@ def test_file_results_fetcher_rejects_non_list_query_payload(tmp_path) -> None:
         fetcher.fetch("vitamin b6")
 
 
+def test_file_results_fetcher_reports_invalid_json_path(tmp_path) -> None:
+    path = tmp_path / "results.json"
+    path.write_text("{not json", encoding="utf-8")
+
+    fetcher = FileResultsFetcher(path)
+
+    with pytest.raises(ValueError, match=str(path)):
+        fetcher.fetch("vitamin b6")
+
+
 def test_elasticsearch_fetcher_normalizes_hits(monkeypatch) -> None:
     calls = {}
 
@@ -125,4 +135,3 @@ def test_elasticsearch_fetcher_wraps_request_errors(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="Failed to fetch results"):
         fetcher.fetch("vitamin b6")
-

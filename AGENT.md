@@ -26,6 +26,7 @@ Current implementation status:
 - The current validation decision flow is reference-first: a strong reference model establishes the upper bound before local-model results are treated as meaningful evidence.
 - The local calibration gate is advisory. Only the reference calibration gate should hard-block a full benchmark run during the fast thesis-test phase.
 - The current 200-row Amazon slice is frozen for one decisive thesis test; do not resample again unless there is a clear derivation bug.
+- Current launch-prep priority is the core grading library and CLI. Validation should remain available, but it should not dominate the repo story or complicate day-one usage.
 
 This means:
 
@@ -36,6 +37,7 @@ This means:
 - Keep recovery behavior shared across the grader library, the main CLI, and the validation runner when improving long-running local workflows.
 - For Amazon validation work, prefer ESCI-specific prompt semantics and structured output over generic text-mode scoring prompts.
 - Do not let a weak local-model result outweigh a strong reference verdict when assessing whether the project thesis still has promise.
+- For launch-facing cleanup, prefer simplifying the core user experience over preserving every milestone-era experiment or doc.
 
 ## Delivery Order
 

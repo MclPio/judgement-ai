@@ -165,29 +165,19 @@ class Grader:
 
         completed_pairs = load_completed_pairs(resume_from) if resume_from else set()
         writer = self._build_output_writer(output_path=output_path, output_format=output_format)
-
         query_order = {query: index for index, query in enumerate(queries)}
-        tasks: list[tuple[str, SearchResult]] = []
-        skipped = 0
-        for query in queries:
-            for item in self.fetcher.fetch(query):
-                if (query, item.doc_id) in completed_pairs:
-                    skipped += 1
-                    continue
-                tasks.append((query, item))
+        tasks, skipped = self._collect_tasks(queries=queries, completed_pairs=completed_pairs)
 
         total = len(tasks)
-        self._emit_progress(
-            progress_callback,
-            GradeProgress(
-                event="start",
-                total=total,
-                completed=0,
-                successes=0,
-                failures=0,
-                skipped=skipped,
-                elapsed_seconds=monotonic() - start_time,
-            ),
+        self._emit_progress_event(
+            progress_callback=progress_callback,
+            event="start",
+            total=total,
+            completed=0,
+            successes=0,
+            failures=0,
+            skipped=skipped,
+            start_time=start_time,
         )
 
         graded_results: list[GradeResult] = []
@@ -203,49 +193,21 @@ class Grader:
             for future in as_completed(future_map):
                 result = future.result()
                 completed += 1
-                if isinstance(result, GradeFailure):
-                    failures.append(result)
-                    failure_count += 1
-                    if failed_log_path is not None:
-                        self._write_failures(failures, failed_log_path)
-                    self._emit_progress(
-                        progress_callback,
-                        GradeProgress(
-                            event="item_failed",
-                            total=total,
-                            completed=completed,
-                            successes=successes,
-                            failures=failure_count,
-                            skipped=skipped,
-                            elapsed_seconds=monotonic() - start_time,
-                            query=result.query,
-                            doc_id=result.doc_id,
-                            attempts=result.attempts,
-                        ),
-                    )
-                    if item_callback is not None:
-                        item_callback(result)
-                else:
-                    graded_results.append(result)
-                    successes += 1
-                    if writer is not None:
-                        writer.append(result)
-                    self._emit_progress(
-                        progress_callback,
-                        GradeProgress(
-                            event="item_completed",
-                            total=total,
-                            completed=completed,
-                            successes=successes,
-                            failures=failure_count,
-                            skipped=skipped,
-                            elapsed_seconds=monotonic() - start_time,
-                            query=result.query,
-                            doc_id=result.doc_id,
-                        ),
-                    )
-                    if item_callback is not None:
-                        item_callback(result)
+                successes, failure_count = self._handle_completed_result(
+                    result=result,
+                    graded_results=graded_results,
+                    failures=failures,
+                    writer=writer,
+                    failed_log_path=failed_log_path,
+                    progress_callback=progress_callback,
+                    item_callback=item_callback,
+                    total=total,
+                    completed=completed,
+                    successes=successes,
+                    failure_count=failure_count,
+                    skipped=skipped,
+                    start_time=start_time,
+                )
 
         graded_results.sort(key=lambda item: (query_order[item.query], item.rank, item.doc_id))
         failures.sort(key=lambda item: (query_order[item.query], item.rank, item.doc_id))
@@ -264,20 +226,35 @@ class Grader:
             elif failed_output_path.exists():
                 failed_output_path.unlink()
 
-        self._emit_progress(
-            progress_callback,
-            GradeProgress(
-                event="finished",
-                total=total,
-                completed=completed,
-                successes=len(graded_results),
-                failures=len(failures),
-                skipped=skipped,
-                elapsed_seconds=monotonic() - start_time,
-            ),
+        self._emit_progress_event(
+            progress_callback=progress_callback,
+            event="finished",
+            total=total,
+            completed=completed,
+            successes=len(graded_results),
+            failures=len(failures),
+            skipped=skipped,
+            start_time=start_time,
         )
 
         return graded_results
+
+    def _collect_tasks(
+        self,
+        *,
+        queries: list[str],
+        completed_pairs: set[tuple[str, str]],
+    ) -> tuple[list[tuple[str, SearchResult]], int]:
+        """Collect all grading tasks while honoring resume state."""
+        tasks: list[tuple[str, SearchResult]] = []
+        skipped = 0
+        for query in queries:
+            for item in self.fetcher.fetch(query):
+                if (query, item.doc_id) in completed_pairs:
+                    skipped += 1
+                    continue
+                tasks.append((query, item))
+        return tasks, skipped
 
     def _build_output_writer(
         self,
@@ -294,6 +271,66 @@ class Grader:
         if output_format == "quepid_csv":
             return QuepidCsvWriter(output_path)
         raise ValueError("output_format must be one of: 'json', 'quepid_csv', or None.")
+
+    def _handle_completed_result(
+        self,
+        *,
+        result: GradeResult | GradeFailure,
+        graded_results: list[GradeResult],
+        failures: list[GradeFailure],
+        writer: JsonResultsWriter | QuepidCsvWriter | None,
+        failed_log_path: str | Path | None,
+        progress_callback: Callable[[GradeProgress], None] | None,
+        item_callback: GradeItemCallback | None,
+        total: int,
+        completed: int,
+        successes: int,
+        failure_count: int,
+        skipped: int,
+        start_time: float,
+    ) -> tuple[int, int]:
+        """Apply side effects for a completed grading future."""
+        if isinstance(result, GradeFailure):
+            failures.append(result)
+            failure_count += 1
+            if failed_log_path is not None:
+                self._write_failures(failures, failed_log_path)
+            self._emit_progress_event(
+                progress_callback=progress_callback,
+                event="item_failed",
+                total=total,
+                completed=completed,
+                successes=successes,
+                failures=failure_count,
+                skipped=skipped,
+                start_time=start_time,
+                query=result.query,
+                doc_id=result.doc_id,
+                attempts=result.attempts,
+            )
+            if item_callback is not None:
+                item_callback(result)
+            return successes, failure_count
+
+        graded_results.append(result)
+        successes += 1
+        if writer is not None:
+            writer.append(result)
+        self._emit_progress_event(
+            progress_callback=progress_callback,
+            event="item_completed",
+            total=total,
+            completed=completed,
+            successes=successes,
+            failures=failure_count,
+            skipped=skipped,
+            start_time=start_time,
+            query=result.query,
+            doc_id=result.doc_id,
+        )
+        if item_callback is not None:
+            item_callback(result)
+        return successes, failure_count
 
     def _grade_result(self, *, query: str, item: SearchResult) -> GradeResult | GradeFailure:
         """Grade a single fetched result with retries."""
@@ -402,7 +439,7 @@ class Grader:
             msg = f"LLM request timed out after {self.request_timeout} seconds."
             raise ProviderError(msg, failure_type="timeout") from exc
         except requests.RequestException as exc:
-            msg = f"Failed to call LLM provider: {exc}"
+            msg = self._build_provider_error_message(exc)
             raise ProviderError(msg, failure_type="provider_error") from exc
 
         data = response.json()
@@ -436,7 +473,7 @@ class Grader:
             msg = f"LLM request timed out after {self.request_timeout} seconds."
             raise ProviderError(msg, failure_type="timeout") from exc
         except requests.RequestException as exc:
-            msg = f"Failed to call LLM provider: {exc}"
+            msg = self._build_provider_error_message(exc)
             raise ProviderError(msg, failure_type="provider_error") from exc
 
         data = response.json()
@@ -503,6 +540,33 @@ class Grader:
                 raw_response=message,
             )
         return payload
+
+    def _build_provider_error_message(self, exc: requests.RequestException) -> str:
+        """Build a more actionable provider error message."""
+        message = f"Failed to call LLM provider: {exc}"
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+        response_text = self._response_text(response)
+        if response_text:
+            message = f"{message}. Response body: {response_text}"
+        if status_code == 400 and self.response_mode == "json_schema":
+            message = (
+                f"{message}. If you are using a routed OpenAI-compatible provider, "
+                "retry with text mode to confirm structured-output support."
+            )
+        return message
+
+    def _response_text(self, response: Any) -> str | None:
+        """Extract a short response body snippet from an HTTP error response."""
+        if response is None:
+            return None
+        text = getattr(response, "text", None)
+        if not isinstance(text, str) or not text.strip():
+            return None
+        compact = " ".join(text.split())
+        if len(compact) <= 300:
+            return compact
+        return f"{compact[:297]}..."
 
     def parse_response(
         self,
@@ -638,3 +702,35 @@ class Grader:
     ) -> None:
         if callback is not None:
             callback(event)
+
+    def _emit_progress_event(
+        self,
+        *,
+        progress_callback: Callable[[GradeProgress], None] | None,
+        event: str,
+        total: int,
+        completed: int,
+        successes: int,
+        failures: int,
+        skipped: int,
+        start_time: float,
+        query: str | None = None,
+        doc_id: str | None = None,
+        attempts: int | None = None,
+    ) -> None:
+        """Build and emit one structured progress event."""
+        self._emit_progress(
+            progress_callback,
+            GradeProgress(
+                event=event,
+                total=total,
+                completed=completed,
+                successes=successes,
+                failures=failures,
+                skipped=skipped,
+                elapsed_seconds=monotonic() - start_time,
+                query=query,
+                doc_id=doc_id,
+                attempts=attempts,
+            ),
+        )

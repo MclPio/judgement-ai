@@ -93,25 +93,30 @@ class FileResultsFetcher:
         if self._payload is not None:
             return self._payload
 
-        with self.path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
+        try:
+            with self.path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except json.JSONDecodeError as exc:
+            msg = f"Results file {self.path} was not valid JSON: {exc}"
+            raise ValueError(msg) from exc
 
         if not isinstance(payload, dict):
             raise ValueError(
-                "Results file must be a JSON object that maps each query to a list of results."
+                f"Results file {self.path} must be a JSON object that maps each query to a list "
+                "of results."
             )
 
         for query, items in payload.items():
             if not isinstance(query, str):
-                raise ValueError("Results file query keys must be strings.")
+                raise ValueError(f"Results file {self.path} query keys must be strings.")
             if not isinstance(items, list):
                 raise ValueError(
-                    f"Results for query {query!r} must be a list of result objects."
+                    f"Results in {self.path} for query {query!r} must be a list of result objects."
                 )
             for item in items:
                 if not isinstance(item, dict):
                     raise ValueError(
-                        f"Each result for query {query!r} must be a JSON object."
+                        f"Each result in {self.path} for query {query!r} must be a JSON object."
                     )
 
         self._payload = payload

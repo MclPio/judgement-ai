@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from judgement_ai.fetcher import SearchResult
-from judgement_ai.grader import GradeProgress, Grader, ParseError
+from judgement_ai.grader import GradeProgress, Grader, ParseError, ProviderError
 
 
 class StaticFetcher:
@@ -28,6 +28,12 @@ class DummyResponse:
 
     def json(self):
         return self.payload
+
+
+class ErrorResponse:
+    def __init__(self, status_code: int, text: str) -> None:
+        self.status_code = status_code
+        self.text = text
 
 
 def make_grader(
@@ -189,6 +195,34 @@ def test_call_llm_uses_ollama_native_api_for_structured_output(monkeypatch) -> N
     assert captured["url"] == "http://localhost:11434/api/chat"
     assert captured["json"]["think"] is False
     assert captured["json"]["format"]["required"] == ["score", "reasoning"]
+
+
+def test_call_llm_includes_response_body_in_provider_errors(monkeypatch) -> None:
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        response = ErrorResponse(400, '{"error":"unsupported parameter: response_format"}')
+        raise requests.HTTPError("400 Client Error", response=response)
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = make_grader(response_mode="json_schema")
+
+    with pytest.raises(ProviderError, match="unsupported parameter"):
+        grader._call_llm(prompt="Prompt text")
+
+
+def test_call_llm_suggests_text_mode_for_json_schema_400s(monkeypatch) -> None:
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        response = ErrorResponse(400, "bad request")
+        raise requests.HTTPError("400 Client Error", response=response)
+
+    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+
+    grader = make_grader(response_mode="json_schema")
+
+    with pytest.raises(ProviderError, match="retry with text mode"):
+        grader._call_llm(prompt="Prompt text")
 
 
 def test_grade_returns_scored_results(monkeypatch) -> None:

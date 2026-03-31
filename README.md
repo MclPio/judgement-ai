@@ -1,96 +1,266 @@
 # judgement-ai
 
-Automated AI-powered search relevance grading. Replace costly human experts with an LLM that produces judgment lists compatible with existing search evaluation pipelines.
+`judgement-ai` is a Python library and CLI for generating judgment lists with an LLM.
 
-## Status
+It is built for workflows like:
 
-This repository is scaffolded as a Python library first, with a thin CLI layer on top. The implementation plan, agent workflow, and delivery pipeline are documented in [AGENT.md](/Users/mclpio/repos/judgement-ai/AGENT.md) and [PIPELINE.md](/Users/mclpio/repos/judgement-ai/PIPELINE.md).
+- search relevance grading
+- ranking experiments
+- offline result review
+- AI-assisted scoring pipelines
 
-Prompt research for Milestone 1 is captured in [docs/prompt-research.md](/Users/mclpio/repos/judgement-ai/docs/prompt-research.md).
-Validation operations are documented in [docs/validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md).
-Benchmark details are documented in [docs/amazon-benchmark.md](/Users/mclpio/repos/judgement-ai/docs/amazon-benchmark.md).
+The core idea is simple:
 
-## Quickstart
+1. load queries
+2. fetch or read candidate results
+3. ask an LLM to score each `(query, document)` pair
+4. write standard output that can feed the rest of your evaluation workflow
+
+## What It Does
+
+- grades search results with an OpenAI-compatible or Ollama-backed model
+- supports Elasticsearch and pre-fetched JSON input
+- writes Quepid-compatible CSV or detailed JSON
+- runs concurrently for practical throughput
+- writes incrementally so long runs are not lost
+- supports resume and sidecar failure logs
+
+## What It Does Not Do
+
+- compute IR metrics like NDCG or MRR
+- optimize search queries
+- provide a web UI
+- train or fine-tune models
+
+`judgement-ai` is the grading step, not the whole evaluation stack.
+
+## Install
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
-pytest
+pip install -e .
 ```
 
-For validation work that computes benchmark metrics, install the optional validation extras:
+For local development:
+
+```bash
+pip install -e ".[dev]"
+```
+
+For optional validation tooling:
 
 ```bash
 pip install -e ".[dev,validate]"
 ```
 
-## Planned package layout
+## Quickstart
 
-```text
-judgement_ai/
-├── __init__.py
-├── cli.py
-├── config.py
-├── fetcher.py
-├── grader.py
-├── output.py
-├── prompts.py
-└── resume.py
+### CLI with pre-fetched results
+
+```bash
+judgement-ai grade \
+  --queries queries.txt \
+  --results-file results.json \
+  --model gpt-5.1 \
+  --api-key "$OPENAI_API_KEY" \
+  --output judgments.json
 ```
 
-## Scope
+### CLI with Elasticsearch
 
-- Python library first, CLI second
-- Elasticsearch and pre-fetched file inputs for v1
-- Quepid CSV and JSON outputs for v1
-- Resumable grading runs
-- Validation workflow against Amazon ESCI product-search data
+```bash
+judgement-ai grade \
+  --queries queries.txt \
+  --elasticsearch https://my-elastic/catalog \
+  --model gpt-5.1 \
+  --api-key "$OPENAI_API_KEY" \
+  --top-n 24 \
+  --output judgments.csv
+```
 
-## Validation
+### Local Ollama example
 
-The repository now includes an Amazon-focused validation workflow under [validate](/Users/mclpio/repos/judgement-ai/validate):
+```bash
+judgement-ai grade \
+  --queries queries.txt \
+  --results-file results.json \
+  --base-url http://localhost:11434/v1 \
+  --provider ollama \
+  --model qwen3.5:9b \
+  --response-mode json_schema \
+  --no-think \
+  --output judgments.json
+```
 
-- `smoke` for fast local verification
-- `amazon_product_search_calibration` for fast Amazon sanity checks
-- `amazon_product_search` for the real benchmark
+## Library Example
 
-Benchmark data is now local-only by default. Raw Amazon downloads and the derived benchmark datasets live under `validate/data/` and are gitignored. The repo commits the benchmark code and docs, not the generated benchmark data.
+```python
+from judgement_ai import FileResultsFetcher, Grader
 
-Runbook summary:
+fetcher = FileResultsFetcher(path="results.json")
 
-1. Download Amazon ESCI data
-2. Build the local `amazon_product_search`, calibration, and report artifacts
-3. Run `smoke` against your OpenAI-compatible endpoint
-4. Run `amazon_product_search_calibration` with one strong non-lite reference judge
-5. If that looks viable, run the full reference `amazon_product_search` benchmark
-6. Only then run local calibration and local full benchmarks as comparison evidence
-7. Review saved artifacts, analysis, and observed metrics
+grader = Grader(
+    fetcher=fetcher,
+    llm_base_url="https://api.openai.com/v1",
+    llm_api_key="YOUR_API_KEY",
+    llm_model="gpt-5.1",
+    response_mode="json_schema",
+    max_retries=1,
+)
 
-See [docs/validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md) for the exact workflow and example commands.
+results = grader.grade(
+    queries=["vitamin b6", "magnesium for sleep"],
+    output_path="judgments.json",
+    output_format="json",
+)
 
-The runbook now includes both OpenRouter and Ollama examples. For local Qwen/Ollama runs, use the Amazon ESCI prompt profile, JSON-schema output, `provider: ollama`, `think: false`, a small worker count, and a mostly single-pass run with `max_retries: 1`, followed by `--resume` or `--retry-failures` sweeps instead of burning time on inline retries.
-The current operator workflow is **reference-first**: establish viability with a strong non-lite reference calibration and full reference benchmark, then treat local-model runs as comparison evidence rather than the primary verdict. The local calibration gate is diagnostic only; the full benchmark now hard-blocks only when there is no passing reference calibration.
+print(len(results))
+```
 
-## Not yet published
+## Inputs
 
-- No benchmark correlation numbers are published yet.
-- No supplement-specific validation claim is made yet.
-- The benchmark dataset is generated locally and not committed by default.
+### Query file
 
-## Current State
+Query files can be:
 
-Implemented:
+- plain text: one query per line
+- CSV: first column or `query` column
 
-- prompt system with validation
-- Elasticsearch and pre-fetched results fetchers
-- LLM grading with configurable retries, timeouts, concurrency, failure logging, and provider-aware response modes
-- incremental JSON/CSV outputs and resume support
-- CLI config loading and grade command
-- Amazon-only validation workflow plus smoke, calibration, progress reporting, retry/resume recovery, live artifacts, and analysis reports
+Example:
 
-Pending before benchmark publication:
+```text
+vitamin b6
+tired all the time
+magnesium for sleep
+```
 
-- generate the Amazon benchmark locally
-- run canonical benchmarks with a real model
-- update README with observed metrics
+### Pre-fetched results file
+
+`results.json` should look like:
+
+```json
+{
+  "vitamin b6": [
+    {
+      "doc_id": "123",
+      "rank": 1,
+      "fields": {
+        "title": "Vitamin B6 100mg",
+        "description": "Supports energy metabolism"
+      }
+    }
+  ]
+}
+```
+
+## Outputs
+
+### Quepid CSV
+
+```csv
+query,docid,rating
+vitamin b6,123,3
+magnesium for sleep,456,2
+```
+
+### JSON
+
+```json
+[
+  {
+    "query": "vitamin b6",
+    "doc_id": "123",
+    "score": 3,
+    "reasoning": "Direct match for the product intent.",
+    "rank": 1
+  }
+]
+```
+
+## Resume And Failure Handling
+
+Long runs are meant to be recoverable.
+
+- successful results are written incrementally
+- failed items are written to a sidecar `*-failures.json`
+- `--resume` skips already completed `(query, doc_id)` pairs
+
+Example:
+
+```bash
+judgement-ai grade \
+  --queries queries.txt \
+  --results-file results.json \
+  --model gpt-5.1 \
+  --api-key "$OPENAI_API_KEY" \
+  --output judgments.json \
+  --resume
+```
+
+If the output file already exists and you are not resuming, the CLI will ask before overwriting it.
+Use `--force` to overwrite without a prompt.
+
+## Configuration
+
+An example config file is included at [judgement-ai.yaml.example](/Users/mclpio/repos/judgement-ai/judgement-ai.yaml.example).
+
+For a fuller configuration reference, see [configuration.md](/Users/mclpio/repos/judgement-ai/docs/configuration.md).
+
+## Providers
+
+The tool supports:
+
+- OpenAI-compatible endpoints via `base_url + api_key`
+- Ollama locally
+
+Behavior notes:
+
+- `temperature` is fixed at `0`
+- `json_schema` mode is supported when the provider and model support structured output
+- some routed providers may require `text` mode even when the underlying model supports structured output elsewhere
+
+## License
+
+This project is licensed under [Elastic License 2.0](/Users/mclpio/repos/judgement-ai/LICENSE).
+
+Plain-English intent:
+
+- you can use `judgement-ai` in your own apps, workflows, and internal systems
+- you can modify it for your own use
+- you cannot offer `judgement-ai` itself as a hosted or managed service
+
+This is source-available, not OSI open source.
+
+## Optional Validation
+
+The repo includes optional validation tooling against Amazon ESCI under [validate](/Users/mclpio/repos/judgement-ai/validate), but validation is not required to use the grading pipeline.
+
+If you want to run the benchmark workflow, start with [validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md).
+
+## Documentation
+
+User-facing docs:
+
+- [configuration.md](/Users/mclpio/repos/judgement-ai/docs/configuration.md)
+- [validation-runbook.md](/Users/mclpio/repos/judgement-ai/docs/validation-runbook.md)
+- [amazon-benchmark.md](/Users/mclpio/repos/judgement-ai/docs/amazon-benchmark.md)
+
+Contributor-facing docs:
+
+- [AGENT.md](/Users/mclpio/repos/judgement-ai/AGENT.md)
+- [PIPELINE.md](/Users/mclpio/repos/judgement-ai/PIPELINE.md)
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+ruff check .
+```
+
+## Status
+
+The core library and CLI are implemented and usable.
+
+Validation tooling is present but benchmark claims are intentionally conservative until published results are finalized.

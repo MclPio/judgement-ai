@@ -5,18 +5,34 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "judgement-ai"
 version = "0.1.0"
-description = "Automated AI-powered search relevance grading."
+description = "Python library and CLI for automated AI-powered judgment scoring."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "Elastic License 2.0" }
 authors = [
   { name = "judgement-ai contributors" }
+]
+keywords = ["search", "evaluation", "grading", "llm", "ranking", "judgments"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
   "click>=8.1.7",
   "pyyaml>=6.0.1",
   "requests>=2.32.3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/MclPio/judgement-ai"
+Repository = "https://github.com/MclPio/judgement-ai"
+Issues = "https://github.com/MclPio/judgement-ai/issues"
 
 [project.optional-dependencies]
 dev = [
