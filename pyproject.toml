@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Python library and CLI for automated AI-powered judgment scoring."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Elastic License 2.0" }
+license = { text = "MIT" }
 authors = [
   { name = "judgement-ai contributors" }
 ]

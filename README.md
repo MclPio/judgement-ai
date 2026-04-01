@@ -258,15 +258,7 @@ Prompt and grading tunings such as `prompt_file`, `response_mode`, temperature, 
 
 ## License
 
-This project is licensed under [Elastic License 2.0](LICENSE).
-
-Plain-English intent:
-
-- you can use `judgement-ai` in your own apps, workflows, and internal systems
-- you can modify it for your own use
-- you cannot offer `judgement-ai` itself as a hosted or managed service
-
-This is source-available, not OSI open source.
+This project is licensed under the [MIT License](LICENSE).
 
 ## Optional Validation
 
