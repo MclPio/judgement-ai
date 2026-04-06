@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import requests
-
 
 @dataclass(slots=True)
 class SearchResult:
@@ -34,42 +32,6 @@ def normalize_result(item: dict[str, Any], *, default_rank: int) -> SearchResult
         rank=int(rank),
         fields=fields,
     )
-
-
-class ElasticsearchFetcher:
-    """Fetch top-N results from an Elasticsearch endpoint."""
-
-    def __init__(self, url: str, top_n: int = 10, timeout: float = 30.0) -> None:
-        self.url = url.rstrip("/")
-        self.top_n = top_n
-        self.timeout = timeout
-
-    def fetch(self, query: str) -> list[SearchResult]:
-        """Fetch results for a query from Elasticsearch."""
-        try:
-            response = requests.get(
-                f"{self.url}/_search",
-                params={"size": self.top_n, "q": query},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-        except (requests.RequestException, OSError, RuntimeError) as exc:
-            msg = f"Failed to fetch results from Elasticsearch for query {query!r}: {exc}"
-            raise RuntimeError(msg) from exc
-
-        payload = response.json()
-        hits = payload.get("hits", {}).get("hits", [])
-        return [
-            normalize_result(
-                {
-                    "doc_id": hit.get("_id", ""),
-                    "rank": index,
-                    "fields": hit.get("_source", {}),
-                },
-                default_rank=index,
-            )
-            for index, hit in enumerate(hits, start=1)
-        ]
 
 
 class FileResultsFetcher:

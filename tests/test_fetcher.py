@@ -4,20 +4,7 @@ import json
 
 import pytest
 
-from judgement_ai.fetcher import ElasticsearchFetcher, FileResultsFetcher, normalize_result
-
-
-class DummyResponse:
-    def __init__(self, payload, status_code: int = 200) -> None:
-        self._payload = payload
-        self.status_code = status_code
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise RuntimeError(f"http {self.status_code}")
-
-    def json(self):
-        return self._payload
+from judgement_ai.fetcher import FileResultsFetcher, normalize_result
 
 
 def test_normalize_result_requires_doc_id() -> None:
@@ -92,46 +79,3 @@ def test_file_results_fetcher_reports_invalid_json_path(tmp_path) -> None:
     with pytest.raises(ValueError, match=str(path)):
         fetcher.fetch("vitamin b6")
 
-
-def test_elasticsearch_fetcher_normalizes_hits(monkeypatch) -> None:
-    calls = {}
-
-    def fake_get(url: str, *, params, timeout):
-        calls["url"] = url
-        calls["params"] = params
-        calls["timeout"] = timeout
-        return DummyResponse(
-            {
-                "hits": {
-                    "hits": [
-                        {"_id": "123", "_source": {"title": "Vitamin B6 100mg"}},
-                        {"_id": "456", "_source": {"title": "Energy Support"}},
-                    ]
-                }
-            }
-        )
-
-    monkeypatch.setattr("judgement_ai.fetcher.requests.get", fake_get)
-
-    fetcher = ElasticsearchFetcher(url="https://search.example.com/catalog", top_n=24)
-    results = fetcher.fetch("vitamin b6")
-
-    assert calls["url"] == "https://search.example.com/catalog/_search"
-    assert calls["params"] == {"size": 24, "q": "vitamin b6"}
-    assert len(results) == 2
-    assert results[0].doc_id == "123"
-    assert results[0].rank == 1
-    assert results[1].rank == 2
-
-
-def test_elasticsearch_fetcher_wraps_request_errors(monkeypatch) -> None:
-    def fake_get(url: str, *, params, timeout):
-        del url, params, timeout
-        raise OSError("network down")
-
-    monkeypatch.setattr("judgement_ai.fetcher.requests.get", fake_get)
-
-    fetcher = ElasticsearchFetcher(url="https://search.example.com/catalog")
-
-    with pytest.raises(RuntimeError, match="Failed to fetch results"):
-        fetcher.fetch("vitamin b6")

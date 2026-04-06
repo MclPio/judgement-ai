@@ -270,7 +270,7 @@ def test_grade_command_requires_input_source(tmp_path) -> None:
     )
 
     assert result.exit_code != 0
-    assert "Provide either --elasticsearch/--results-file" in result.output
+    assert "Provide --results-file or set search.results_file in the config file." in result.output
 
 
 def test_grade_command_supports_csv_queries(monkeypatch, tmp_path) -> None:

@@ -4,10 +4,7 @@ llm:
   model: gpt-5.1
 
 search:
-  url: https://my-elastic/catalog
-  # Or use:
   # results_file: results.json
-  top_n: 24
 
 grading:
   scale_min: 0

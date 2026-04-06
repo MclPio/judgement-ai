@@ -13,8 +13,7 @@ llm:
   model: gpt-5.1
 
 search:
-  url: https://my-elastic/catalog
-  top_n: 24
+  results_file: results.json
 
 grading:
   scale_min: 0
@@ -88,24 +87,12 @@ Optional Ollama-only control.
 
 ## `search`
 
-Choose one input source:
-
-### Elasticsearch
-
-```yaml
-search:
-  url: https://my-elastic/catalog
-  top_n: 24
-```
-
-### Pre-fetched JSON
+Provide a pre-fetched JSON results file:
 
 ```yaml
 search:
   results_file: results.json
 ```
-
-`top_n` only applies to Elasticsearch.
 
 For file-backed grading, the query strings you pass must match the top-level keys in `results.json`.
 

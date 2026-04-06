@@ -10,7 +10,7 @@ import click
 
 from judgement_ai import __version__
 from judgement_ai.config import load_config
-from judgement_ai.fetcher import ElasticsearchFetcher, FileResultsFetcher
+from judgement_ai.fetcher import FileResultsFetcher
 from judgement_ai.grader import Grader
 from judgement_ai.progress import TerminalProgressReporter
 
@@ -35,12 +35,6 @@ def main() -> None:
     help="Text or CSV file containing queries to grade.",
 )
 @click.option(
-    "--elasticsearch",
-    "elasticsearch_url",
-    type=str,
-    help="Base Elasticsearch index URL, without /_search.",
-)
-@click.option(
     "--results-file",
     "results_file",
     type=click.Path(exists=True, path_type=Path),
@@ -61,7 +55,6 @@ def main() -> None:
     help="Output format to write.",
 )
 @click.option("--domain", "domain_context", type=str, help="Optional domain context.")
-@click.option("--top-n", type=int, help="Top N results to fetch from Elasticsearch.")
 @click.option("--workers", "max_workers", type=int, help="Maximum concurrent workers.")
 @click.option("--passes", type=int, help="Number of grading passes per item.")
 @click.option("--temperature", type=float, help="Sampling temperature for the LLM.")
@@ -93,7 +86,6 @@ def main() -> None:
 def grade(
     config_path: Path | None,
     queries_path: Path | None,
-    elasticsearch_url: str | None,
     results_file: Path | None,
     model_name: str | None,
     base_url: str | None,
@@ -101,7 +93,6 @@ def grade(
     output_path: Path | None,
     output_format: str | None,
     domain_context: str | None,
-    top_n: int | None,
     max_workers: int | None,
     passes: int | None,
     temperature: float | None,
@@ -130,9 +121,7 @@ def grade(
         raise click.UsageError("No queries were found in the provided queries file.")
 
     fetcher = _build_fetcher(
-        elasticsearch_url=elasticsearch_url or _config_str(search_config, "url"),
         results_file=results_file or _config_path(search_config, "results_file"),
-        top_n=top_n or _config_int(search_config, "top_n") or 10,
     )
 
     final_output_path = _require_output_path(
@@ -238,20 +227,14 @@ def _load_queries_from_csv(path: Path) -> list[str]:
 
 def _build_fetcher(
     *,
-    elasticsearch_url: str | None,
     results_file: Path | None,
-    top_n: int,
 ):
     """Build the configured fetcher implementation."""
-    if elasticsearch_url and results_file:
-        raise click.UsageError("Choose either Elasticsearch or a results file, not both.")
-    if elasticsearch_url:
-        return ElasticsearchFetcher(url=elasticsearch_url, top_n=top_n)
-    if results_file:
-        return FileResultsFetcher(path=results_file)
-    raise click.UsageError(
-        "Provide either --elasticsearch/--results-file or configure search.url/search.results_file."
-    )
+    if results_file is None:
+        raise click.UsageError(
+            "Provide --results-file or set search.results_file in the config file."
+        )
+    return FileResultsFetcher(path=results_file)
 
 
 def _config_section(config: dict[str, Any], key: str) -> dict[str, Any]:
@@ -296,7 +279,7 @@ def _require_output_path(*, output_path: Path | None, output_config: dict[str, A
 
 def _build_grader(
     *,
-    fetcher: ElasticsearchFetcher | FileResultsFetcher,
+    fetcher: FileResultsFetcher,
     llm_config: dict[str, Any],
     grading_config: dict[str, Any],
     model_name: str | None,

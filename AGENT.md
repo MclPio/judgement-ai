@@ -7,7 +7,7 @@ This repository builds `judgement-ai`, a Python library and CLI for automated se
 ## Product Constraints
 
 - Library-first architecture. CLI is a wrapper, not the core.
-- v1 supports Elasticsearch and pre-fetched JSON results only.
+- v1 supports pre-fetched JSON results only.
 - v1 outputs Quepid-compatible CSV and generic JSON only.
 - Temperature is always `0`.
 - Fail loudly on grading format issues during core grading logic.

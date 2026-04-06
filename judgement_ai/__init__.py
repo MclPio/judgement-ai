@@ -2,7 +2,7 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from judgement_ai.fetcher import ElasticsearchFetcher, FileResultsFetcher
+from judgement_ai.fetcher import FileResultsFetcher
 from judgement_ai.grader import Grader
 from judgement_ai.models import GradeResult
 
@@ -11,4 +11,4 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0"
 
-__all__ = ["ElasticsearchFetcher", "FileResultsFetcher", "GradeResult", "Grader", "__version__"]
+__all__ = ["FileResultsFetcher", "GradeResult", "Grader", "__version__"]
