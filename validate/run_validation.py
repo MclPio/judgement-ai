@@ -13,7 +13,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from judgement_ai.config import load_config
 from judgement_ai.fetcher import FileResultsFetcher
 from judgement_ai.grader import Grader
-from judgement_ai.prompts import get_prompt_profile
 from judgement_ai.progress import TerminalProgressReporter
 from judgement_ai.validation import run_validation_benchmark
 
@@ -109,25 +108,13 @@ def main() -> None:
     grading_config = (
         config.get("grading", {}) if isinstance(config.get("grading"), dict) else {}
     )
-    benchmark_prompt_profile = (
-        "amazon_esci"
-        if args.benchmark in {"amazon_product_search", "amazon_product_search_calibration"}
-        else "default"
-    )
-    prompt_profile_name = (
-        args.prompt_profile
-        or _string_or_none(grading_config.get("prompt_profile"))
-        or benchmark_prompt_profile
-    )
-    prompt_profile = get_prompt_profile(prompt_profile_name)
+
+
     scale_labels = grading_config.get("scale_labels")
-    resolved_scale_labels = scale_labels if isinstance(scale_labels, dict) else prompt_profile[
-        "scale_labels"
-    ]
+    resolved_scale_labels = scale_labels
     resolved_prompt_template = (
         args.prompt_file
         or _string_or_none(grading_config.get("prompt_file"))
-        or str(prompt_profile["template"])
     )
     if args.benchmark == "amazon_product_search" and not args.skip_calibration_gates:
         _require_calibration_gates(args.output_dir)

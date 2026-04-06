@@ -52,65 +52,6 @@ DEFAULT_OUTPUT_INSTRUCTIONS = {
     ),
 }
 
-AMAZON_ESCI_SCALE_LABELS = {
-    0: "Irrelevant - does not satisfy the shopping intent expressed by the query.",
-    1: (
-        "Complement - related or compatible add-on, accessory, or adjacent item, "
-        "but not the product the shopper is trying to buy."
-    ),
-    2: (
-        "Substitute - a different product that could plausibly satisfy the same "
-        "shopping need, but is not an exact or near-exact match."
-    ),
-    3: (
-        "Exact or near-exact match - directly satisfies the intended product search, "
-        "including important constraints such as brand, size, quantity, compatibility, "
-        "and exclusions."
-    ),
-}
-
-AMAZON_ESCI_PROMPT_TEMPLATE = """You are an ecommerce product-search relevance judge
-working with the Amazon ESCI taxonomy.
-{domain_context}
-Evaluate whether the product satisfies the shopping intent of the query.
-
-Use this ESCI-aligned scale:
-{scale_labels}
-
-Important judging rules:
-- Treat exact constraints seriously, including words like "without",
-  compatibility requirements, quantity, capacity, material, and pack size.
-- Treat brand constraints seriously when the query names a brand or product line.
-- Treat price ceilings like "$5 items" as real constraints, not hints.
-- Distinguish substitutes from complements carefully: accessories and add-ons are
-  complements, not substitutes.
-- Be conservative with short or ambiguous queries. Do not broaden intent from a
-  single letter or token fragment.
-- If the result only matches a broad topic while violating a key constraint, it
-  should not receive a high score.
-
-{output_instructions}
-
-Query: {query}
-
-Product:
-{result_fields}
-
-Reasoning:
-"""
-
-PROMPT_PROFILES = {
-    "default": {
-        "template": DEFAULT_PROMPT_TEMPLATE,
-        "scale_labels": DEFAULT_SCALE_LABELS,
-    },
-    "amazon_esci": {
-        "template": AMAZON_ESCI_PROMPT_TEMPLATE,
-        "scale_labels": AMAZON_ESCI_SCALE_LABELS,
-    },
-}
-
-
 def load_prompt_template(path: str | Path | None = None) -> str:
     """Return the default prompt or load a custom template from disk."""
     if path is None:
@@ -198,18 +139,6 @@ def render_output_instructions(response_mode: str) -> str:
         return DEFAULT_OUTPUT_INSTRUCTIONS[response_mode]
     except KeyError as exc:
         raise ValueError(f"Unsupported response_mode: {response_mode!r}") from exc
-
-
-def get_prompt_profile(name: str | None) -> dict[str, Any]:
-    """Resolve a named prompt profile."""
-    profile_name = name or "default"
-    try:
-        return PROMPT_PROFILES[profile_name]
-    except KeyError as exc:
-        available = ", ".join(sorted(PROMPT_PROFILES))
-        raise ValueError(
-            f"Unsupported prompt profile {profile_name!r}. Available: {available}."
-        ) from exc
 
 
 def build_prompt(

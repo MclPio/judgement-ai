@@ -1,9 +1,7 @@
 from judgement_ai.prompts import (
-    AMAZON_ESCI_SCALE_LABELS,
     DEFAULT_PROMPT_TEMPLATE,
     DEFAULT_SCALE_LABELS,
     build_prompt,
-    get_prompt_profile,
     render_domain_context,
     render_output_instructions,
     render_result_fields,
@@ -84,13 +82,6 @@ def test_build_prompt_uses_json_schema_output_instructions() -> None:
 
     assert "Respond with a JSON object" in prompt
     assert "SCORE: <number>" not in prompt
-
-
-def test_get_prompt_profile_returns_amazon_esci_profile() -> None:
-    profile = get_prompt_profile("amazon_esci")
-
-    assert profile["scale_labels"] == AMAZON_ESCI_SCALE_LABELS
-    assert "Amazon ESCI taxonomy" in profile["template"]
 
 
 def test_render_output_instructions_rejects_unknown_mode() -> None:
