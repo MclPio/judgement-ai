@@ -14,7 +14,7 @@ from typing import Any
 
 import requests
 
-from judgement_ai.fetcher import SearchResult
+from judgement_ai.fetcher import ResultsFetcher, SearchResult
 from judgement_ai.models import GradeResult
 from judgement_ai.output import JsonResultsWriter, QuepidCsvWriter
 from judgement_ai.prompts import (
@@ -87,7 +87,7 @@ class Grader:
     def __init__(
         self,
         *,
-        fetcher: Any,
+        fetcher: ResultsFetcher,
         llm_base_url: str,
         llm_api_key: str | None,
         llm_model: str,

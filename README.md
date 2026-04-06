@@ -19,7 +19,7 @@ The core idea is simple:
 ## What It Does
 
 - grades search results with an OpenAI-compatible or Ollama-backed model
-- supports Elasticsearch and pre-fetched JSON input
+- supports file-backed and in-memory result inputs
 - writes Quepid-compatible CSV or detailed JSON
 - runs concurrently for practical throughput
 - writes incrementally so long runs are not lost
@@ -67,18 +67,6 @@ judgement-ai grade \
   --output judgments.json
 ```
 
-### CLI with Elasticsearch
-
-```bash
-judgement-ai grade \
-  --queries queries.txt \
-  --elasticsearch https://my-elastic/catalog \
-  --model gpt-5.1 \
-  --api-key "$OPENAI_API_KEY" \
-  --top-n 24 \
-  --output judgments.csv
-```
-
 ### Local Ollama example
 
 ```bash
@@ -93,7 +81,9 @@ judgement-ai grade \
   --output judgments.json
 ```
 
-## Library Example
+## Library Examples
+
+### File-backed results
 
 ```python
 from judgement_ai import FileResultsFetcher, Grader
@@ -119,6 +109,52 @@ results = grader.grade(
 print(len(results))
 ```
 
+### In-memory results
+
+```python
+from judgement_ai import Grader, InMemoryResultsFetcher
+
+fetcher = InMemoryResultsFetcher(
+    {
+        "vitamin b6": [
+            {
+                "doc_id": "123",
+                "fields": {
+                    "title": "Vitamin B6 100mg",
+                    "description": "Supports energy metabolism",
+                },
+            }
+        ]
+    }
+)
+
+grader = Grader(
+    fetcher=fetcher,
+    llm_base_url="https://api.openai.com/v1",
+    llm_api_key="YOUR_API_KEY",
+    llm_model="gpt-5.1",
+)
+
+results = grader.grade(queries=["vitamin b6"])
+print(results[0].score)
+```
+
+## Fetchers
+
+The grading layer only depends on a small fetcher contract:
+
+```python
+class ResultsFetcher(Protocol):
+    def fetch(self, query: str) -> list[SearchResult]: ...
+```
+
+That means you can use the built-in fetchers:
+
+- `FileResultsFetcher(path="results.json")`
+- `InMemoryResultsFetcher({...})`
+
+Or provide your own adapter for another backend, as long as it implements `fetch(query)`.
+
 ## Inputs
 
 ### Query file
@@ -136,9 +172,14 @@ tired all the time
 magnesium for sleep
 ```
 
-### Pre-fetched results file
+### Result inputs
 
-`results.json` should look like:
+The CLI reads a pre-fetched JSON file through `--results-file`.
+
+Library users can either pass the same shape to `InMemoryResultsFetcher(...)` or store it in
+`results.json` for `FileResultsFetcher(...)`.
+
+The canonical shape looks like:
 
 ```json
 {
@@ -163,9 +204,10 @@ This shape is intentionally simple and fixed for v1:
 
 Important behavior:
 
-- for file-backed grading, the queries you pass to `grade(...)` must match those top-level keys
+- the queries you pass to `grade(...)` must match those top-level keys if you want results back
 - the grader uses `doc_id`, `rank`, and `fields`
 - additional top-level attributes are ignored
+- if `rank` is missing, the loader assigns one based on list position starting at `1`
 - if you want extra document metadata to appear in the prompt, put it inside `fields`
 
 For example, this will be visible to the model:

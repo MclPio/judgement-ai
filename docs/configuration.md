@@ -87,14 +87,34 @@ Optional Ollama-only control.
 
 ## `search`
 
-Provide a pre-fetched JSON results file:
+The CLI reads a pre-fetched JSON results file:
 
 ```yaml
 search:
   results_file: results.json
 ```
 
-For file-backed grading, the query strings you pass must match the top-level keys in `results.json`.
+Library users can also pass the same query-to-results shape directly to
+`InMemoryResultsFetcher(...)`.
+
+Example results payload:
+
+```json
+{
+  "vitamin b6": [
+    {
+      "doc_id": "123",
+      "fields": {
+        "title": "Vitamin B6 100mg",
+        "description": "Supports energy metabolism"
+      }
+    }
+  ]
+}
+```
+
+The query strings you pass must match the top-level keys in the results payload if you want
+results back.
 
 Supported result item fields for v1 are:
 
@@ -104,6 +124,8 @@ Supported result item fields for v1 are:
 
 Anything you want the model to see should live under `fields`.
 Other top-level attributes are ignored by the fetcher.
+If `rank` is omitted, the fetcher assigns one based on the result's position in the list,
+starting at `1`.
 
 ## `grading`
 
