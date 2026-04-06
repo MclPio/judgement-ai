@@ -292,3 +292,8 @@ ruff check .
 The core library and CLI are implemented and usable.
 
 Validation tooling is present but benchmark claims are intentionally conservative until published results are finalized.
+
+# REFACTOR BRANCH TODO
+- Add ability to select profiles, instead of passing parameters when calling in the grader, users should be able to have config files that contain all necessary settings, prompt context, end points etc... This was possbile before the refactor but it was done in prompts.py in a bad way. Validation currently has no way to load a profile.
+
+- 
