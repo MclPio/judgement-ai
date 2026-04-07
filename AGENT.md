@@ -2,98 +2,83 @@
 
 ## Purpose
 
-This repository builds `judgement-ai`, a Python library and CLI for automated search relevance grading using LLMs. The agent working in this repo should optimize for shipping a trustworthy, dependency-light library with a thin CLI and a reproducible validation story.
+This repo builds `judgement-ai`: a small Python library and CLI for grading `(query, document)` pairs with an LLM and writing canonical raw judgments JSON, with optional CSV export.
 
-## Product Constraints
+Start here, then read `PIPELINE.md` for the current milestone queue.
 
-- Library-first architecture. CLI is a wrapper, not the core.
-- v1 supports pre-fetched JSON results only.
-- v1 outputs Quepid-compatible CSV and generic JSON only.
-- Temperature is always `0`.
-- Fail loudly on grading format issues during core grading logic.
-- Resume support and incremental writes are mandatory.
-- Validation and credibility are first-class, not polish.
+## Repo Map
 
-## Repo State
+- `judgement_ai/cli.py`: thin CLI with `grade` and `export-quepid`
+- `judgement_ai/grader.py`: grading orchestration, provider calls, retries, parsing
+- `judgement_ai/fetcher.py`: pre-fetched JSON and in-memory fetchers
+- `judgement_ai/prompts.py`: default prompt, prompt loading, placeholder validation
+- `judgement_ai/output.py`: canonical JSON writer and CSV export
+- `judgement_ai/resume.py`: resume from existing raw judgments JSON
+- `judgement_ai/validation.py`: benchmark execution, alignment, metrics, analysis, gates
+- `judgement_ai/validation_prep.py`: dataset preparation helpers used by `validate/`
+- `validate/`: optional validation scripts, smoke dataset, provenance notes
+- `tests/`: source of truth for supported behavior
 
-Current implementation status:
+## Current Product Shape
 
-- Core library, CLI, retry logic, incremental outputs, resume, and validation scaffolding exist.
-- Active validation modes are `smoke`, `amazon_product_search_calibration`, and `amazon_product_search`.
-- Benchmark data is intended to be generated locally under `validate/data/`, not committed by default.
-- Local-model validation now favors a mostly single-pass first run with configurable timeout/retry settings, followed by resume or retry-only sweeps when needed.
-- Validation now also has an Amazon ESCI prompt profile, structured-output support, live artifact updates, and calibration gate artifacts.
-- The current validation decision flow is reference-first: a strong reference model establishes the upper bound before local-model results are treated as meaningful evidence.
-- The local calibration gate is advisory. Only the reference calibration gate should hard-block a full benchmark run during the fast thesis-test phase.
-- The current 200-row Amazon slice is frozen for one decisive thesis test; do not resample again unless there is a clear derivation bug.
-- Current launch-prep priority is the core grading library and CLI. Validation should remain available, but it should not dominate the repo story or complicate day-one usage.
+What is clearly implemented now:
 
-This means:
+- Library-first design with a thin Click CLI
+- Pre-fetched JSON results as the main grading input
+- Canonical raw judgments JSON as the source of truth
+- Optional Quepid CSV export, either during grading or later
+- Resume support based on existing raw judgments JSON
+- Sidecar failure logs for long-running or partial runs
+- Provider support for OpenAI-compatible APIs and Ollama
+- `text` and `json_schema` response modes
+- Optional validation flows, including a checked-in smoke dataset and Amazon-oriented helpers
 
-- Do not present benchmark numbers as published facts unless they are backed by saved artifacts under `validate/published/`.
-- Treat `validate/data/amazon_product_search.json` as local benchmark data, not repo-owned source.
-- Treat `validate/data/amazon_product_search_calibration.json` as local benchmark data, not repo-owned source.
-- README benchmark claims must match saved summary artifacts exactly.
-- Keep recovery behavior shared across the grader library, the main CLI, and the validation runner when improving long-running local workflows.
-- For Amazon validation work, prefer ESCI-specific prompt semantics and structured output over generic text-mode scoring prompts.
-- Do not let a weak local-model result outweigh a strong reference verdict when assessing whether the project thesis still has promise.
-- For launch-facing cleanup, prefer simplifying the core user experience over preserving every milestone-era experiment or doc.
+What is not the core product story:
 
-## Delivery Order
-
-Work in this order unless the user explicitly redirects:
-
-1. Prompt research and citation capture
-2. Prompt design and placeholder validation
-3. Fetchers
-4. Grader orchestration and parsing
-5. Output writers
-6. Resume logic
-7. CLI integration
-8. Validation workflow
-9. README and packaging polish
-
-Do not jump ahead if the previous step is not working end-to-end.
+- fetching from live search backends
+- ranking metrics like NDCG or MRR
+- a UI
+- benchmark claims not backed by committed artifacts
 
 ## Working Rules
 
-- Keep dependencies light. Prefer `requests`, `click`, `pyyaml`, and stdlib.
-- Use small, explicit abstractions. Avoid framework-heavy designs.
-- Write tests alongside implementation, not after.
-- When behavior is safety-sensitive, prefer hard failure with actionable messaging.
-- Preserve output compatibility with common evaluation pipelines.
-- Prefer deterministic parsing and explicit schemas over clever heuristics.
+- Treat code and tests as more trustworthy than old markdown.
+- Keep `AGENT.md` short; put milestone detail in `PIPELINE.md`.
+- Before running repo commands, activate the local environment with `source .venv/bin/activate`.
+- Use `python3`, not `python`, for repo commands and examples.
+- Prefer small, direct changes in the library before adding CLI complexity.
+- Preserve the current canonical artifact contract:
+  - raw judgments output is JSON
+  - resume reads that JSON
+  - CSV export is derived from that JSON
+- When behavior changes, update tests and docs in the same pass.
+- Avoid expanding validation scope unless it supports the core library story.
 
-## Implementation Expectations
+## Plan-Code-Test Loop
 
-- Every milestone should end with runnable tests.
-- New public behavior should have at least one focused test.
-- File formats should be documented with examples.
-- User-facing errors should explain what failed and what to try next.
-- README claims should only be made once code or validation exists.
-- Validation claims should only be made once real benchmark datasets and saved published artifacts exist.
+Follow the harness-style loop for each milestone:
 
-## Research Notes
+1. Plan: read the relevant module(s), tests, and `PIPELINE.md`; define the smallest end-to-end change.
+2. Code: implement only what the milestone needs, keeping CLI wrappers thin.
+3. Test: run the narrowest useful tests first, then broader repo checks before closing the milestone.
 
-Before implementing the grading prompt, capture sources and decisions from:
+Do not treat planning as separate from execution. A milestone is only done when the code and tests match the updated docs.
 
-- Zheng et al. 2023, MT-Bench / Chatbot Arena judge guidance
-- SIGIR 2024 TREC LLMJudge findings
-- Databricks LLM auto-eval best practices
+## Test Commands
 
-The differentiation is the pipeline and packaging, not novelty claims about the prompt itself.
+Use the smallest command that proves the change, then widen as needed:
 
-## Definition Of Done
+- `source .venv/bin/activate`
+- `python3 -m pytest tests/test_prompts.py`
+- `python3 -m pytest tests/test_grader.py`
+- `python3 -m pytest tests/test_cli.py`
+- `python3 -m pytest tests/test_validation.py tests/test_run_validation_entrypoint.py`
+- `python3 -m pytest`
+- `python3 -m ruff check .`
 
-A milestone is complete only when:
+## Documentation Standard
 
-- Code exists
-- Tests pass
-- The user-facing behavior is documented
-- The next milestone can build on it without rework
-
-For validation/data milestones, also require:
-
-- provenance notes are updated
-- scaffold-vs-published status is documented honestly
-- any README metric matches committed saved output exactly
+- `AGENT.md` is the entrypoint, not the encyclopedia.
+- `PIPELINE.md` is the active implementation board.
+- README should describe current user-facing behavior only.
+- Validation numbers or quality claims must match saved artifacts exactly.

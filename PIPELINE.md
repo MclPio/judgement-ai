@@ -1,626 +1,222 @@
 # Pipeline
 
-## Workflow
+## How To Use This File
 
-This repository follows a strict implementation pipeline:
+Read `AGENT.md` first. Then use this file to choose the next milestone and run it through:
 
-1. Milestone definition
-2. Task breakdown
-3. Code implementation
-4. Testing and verification
+1. Plan
+2. Code
+3. Test
 
-Each milestone must fully pass through all four stages before the next milestone starts.
+Keep milestones small enough that one pass can finish end-to-end.
+
+## Current Baseline
+
+The current codebase already supports:
+
+- grading from query files plus pre-fetched JSON results
+- canonical raw judgments JSON output
+- optional CSV export through `--quepid-output` or `export-quepid`
+- config loading from YAML
+- retries, request timeouts, concurrency, and resume
+- `text` and `json_schema` response modes
+- optional validation helpers and scripts under `validate/`
+
+The most reliable source for this baseline is `tests/`, not old milestone notes.
+
+Local command convention:
+
+- activate `.venv` first with `source .venv/bin/activate`
+- use `python3`, not `python`
 
 ## Milestone Template
 
-### 1. Milestone
+For each milestone, write down:
 
-State the smallest end-to-end capability we want to ship next.
+- plan: the smallest user-visible or architecture-visible outcome
+- code: the files that should change
+- test: the exact commands that prove it works
 
-Example:
+If a milestone changes public behavior, update docs in the same pass.
 
-- Prompt system with default template and custom prompt validation
+## Active Milestones
 
-### 2. Task Breakdown
+### M1. Architecture And Code Organization Review
 
-Break the milestone into concrete tasks with explicit outputs.
+Plan:
 
-Example:
+- review whether `judgement_ai/grader.py` and `judgement_ai/cli.py` should be split into smaller modules or packages
+- prefer code splitting that improves readability, types, and testability without changing behavior first
+- use this milestone to answer whether the repo is following good organizational practices, then apply the smallest high-value refactor
 
-- Add default prompt template and scale labels
-- Add prompt file loading
-- Validate required placeholders
-- Add focused unit tests
-- Document prompt override behavior
+Code focus:
 
-### 3. Code
+- `judgement_ai/grader.py`
+- `judgement_ai/cli.py`
+- neighboring modules affected by extraction boundaries
 
-Implementation rules:
+Test minimum:
 
-- Change only the files needed for the milestone
-- Prefer small composable functions
-- Keep CLI behavior thin and delegated into library code
-- Add or update examples when public usage changes
+- `source .venv/bin/activate`
+- `python3 -m pytest tests/test_grader.py tests/test_cli.py tests/test_resume.py tests/test_output.py`
+- `python3 -m ruff check .`
 
-### 4. Testing
+### M2. Structured Output Reliability Decision
 
-Every milestone should define:
+Plan:
 
-- Unit tests for expected behavior
-- Failure-path tests for invalid input
-- A manual verification note if external systems are involved
+- verify whether `json_schema` mode is reliable enough for OpenAI-compatible APIs to keep as a first-class path
+- compare current repo behavior with manual provider checks outside the codebase before changing implementation
+- decide among:
+  - keep both `text` and `json_schema`
+  - keep `json_schema` only as optional best-effort behavior
+  - remove `json_schema` from the core product path
+- decide separately whether Ollama structured output is worth keeping or is unnecessary complexity
 
-## Initial Milestones
+Code focus:
 
-### Milestone 0: Python project setup
+- `judgement_ai/grader.py`
+- `tests/test_grader.py`
+- `docs/structured-output-checks.md`
+- user-facing docs that describe response modes
 
-Tasks:
+Test minimum:
 
-- Create installable package with `pyproject.toml`
-- Add package/test/examples/validate directories
-- Add lint and test configuration
-- Add CI workflow for test and lint
+- `source .venv/bin/activate`
+- `python3 -m pytest tests/test_grader.py tests/test_cli.py`
+- `python3 -m ruff check .`
 
-Verification:
+### M3. Retry And Failure-Recovery Semantics
 
-- `pip install -e ".[dev]"`
-- `pytest`
-- `python -m judgement_ai.cli --help`
+Plan:
 
-### Milestone 1: Prompt research and prompt module
+- verify whether `max_retries=0` should be supported
+- keep recovery behavior easy to understand for users who prefer single-pass runs plus later failure retries
+- clarify the relationship between retries, failure logs, resume, and any retry-failures workflow
 
-Tasks:
+Code focus:
 
-- Capture research-backed prompt guidance
-- Implement default prompt
-- Implement custom prompt loading and validation
-- Add unit tests for placeholder validation
+- `judgement_ai/grader.py`
+- `judgement_ai/cli.py`
+- `judgement_ai/validation.py`
+- tests and docs covering failure recovery
 
-Verification:
+Test minimum:
 
-- Prompt validation tests pass
-- README or docs cite the chosen sources
+- `source .venv/bin/activate`
+- `python3 -m pytest tests/test_grader.py tests/test_cli.py tests/test_resume.py tests/test_validation.py`
 
-### Milestone 2: Fetchers
+### M4. Prompt And Configuration Usability
 
-Tasks:
+Plan:
 
-- Implement Elasticsearch fetcher
-- Implement pre-fetched results file fetcher
-- Normalize fetch output structure
-- Add tests using fixtures or mocked HTTP responses
+- make prompt customization easy to discover and safe to use
+- document exactly what can be customized and what template variables are required
+- confirm whether the current config surface already covers the important prompt controls cleanly
 
-Verification:
+Code focus:
 
-- Fetchers return deterministic `SearchResult` objects
-- Failure paths raise actionable errors
+- `judgement_ai/prompts.py`
+- `judgement_ai/config.py`
+- `judgement_ai/cli.py`
+- `docs/configuration.md`
+- `README.md`
 
-### Milestone 3: Grader core
+Test minimum:
 
-Tasks:
+- `source .venv/bin/activate`
+- `python3 -m pytest tests/test_prompts.py tests/test_config.py tests/test_cli.py`
 
-- Build prompt payload from query and result fields
-- Call LLM provider with OpenAI-compatible API
-- Parse `SCORE: <integer>` strictly
-- Add retry behavior and failed-run logging
-- Add concurrency via `ThreadPoolExecutor`
+### M5. Naming And Output Language Cleanup
 
-Verification:
+Plan:
 
-- Parsing tests pass
-- Retry behavior is covered
-- Failed items are persisted without aborting the whole run
+- remove Quepid-specific language in the public story
+- keep CSV export support, but describe it more generically
 
-### Milestone 4: Outputs and resume
+Code focus:
 
-Tasks:
+- `judgement_ai/cli.py`
+- `judgement_ai/output.py`
+- `README.md`
+- `docs/configuration.md`
 
-- Implement incremental JSON output
-- Implement Quepid CSV output
-- Add resume set loading
-- Skip previously completed `(query, doc_id)` pairs
+Test minimum:
 
-Verification:
+- `source .venv/bin/activate`
+- `python3 -m pytest tests/test_cli.py tests/test_output.py`
 
-- Resume tests pass
-- Incremental outputs are readable after partial runs
+### M6. Validation Scope Simplification
 
-### Milestone 5: CLI
+Plan:
 
-Tasks:
+- decide whether validation should stay in this repo at all
+- if it stays, keep it simple: prepared inputs in, `judgement_ai` package run, artifacts out
+- remove data acquisition and benchmark-lab complexity if that is no longer the package’s responsibility
 
-- Expose grade command
-- Support config loading
-- Wire fetcher selection, output selection, and resume mode
-- Add CLI tests
+Code focus:
 
-Verification:
+- `judgement_ai/validation.py`
+- `validate/`
+- docs mentioning validation
 
-- Example commands run locally against fixtures
+Test minimum:
 
-### Milestone 6: Validation and credibility
+- `source .venv/bin/activate`
+- `python3 -m pytest tests/test_validation.py tests/test_validation_prep.py tests/test_prepare_benchmarks.py tests/test_run_validation_entrypoint.py`
 
-Tasks:
+### M7. Markdown Rewrite Pass
 
-- Add validation support for smoke and Amazon product-search benchmarks
-- Add local benchmark derivation tooling plus provenance notes
-- Compute correlation against human labels
-- Persist reproducible outputs and benchmark artifacts
-- Document known limitations and tested models
-
-Verification:
+Plan:
 
-- Validation script runs from a clean checkout
-- README claims match saved outputs when benchmark artifacts are published
+- rewrite markdown files to be short, current, and pleasant to read
+- keep `AGENT.md` as the entrypoint, `PIPELINE.md` as the work board, and trim or merge the rest as needed
+- remove stale milestone history and confusing internal notes
 
-Current follow-up work after milestone implementation:
-
-- download and derive the local Amazon benchmark dataset
-- run the benchmark with a real OpenAI-compatible or Ollama model
-- review local artifacts and decide what, if anything, should be promoted into published docs
-- then update README with observed metrics only after the outputs are approved
+Code focus:
 
-### Milestone 7: Local Validation Reliability
+- `AGENT.md`
+- `PIPELINE.md`
+- `README.md`
+- `docs/*.md`
 
-Purpose:
 
-- make long-running local benchmark runs practical
-- separate first-pass benchmarking from failure recovery
-- make timeout/retry behavior configurable
-- keep docs aligned with the implemented workflow
-- keep the work shared across the library, main CLI, and validation runner
+### M8. License Review
 
-Tasks:
+Plan:
 
-- Add configurable `request_timeout` to the shared grader and expose it through validation and the main CLI/config path
-- Add configurable `max_retries` to the shared grader and expose it through validation and the main CLI/config path
-- Change the recommended benchmark workflow to use a mostly single-pass first run, with retries handled later in a separate sweep
-- Add a retry-sweep mode that reruns only failed rows from a prior validation artifact
-- Add validation resume support so successful rows are not regraded unnecessarily
-- Preserve and improve failure artifacts so timeout vs parse-format vs provider errors are easy to distinguish
-- Keep the progress feedback shared across library/CLI/validation and ensure the new recovery flow also reports progress
-- Update `README.md`, `AGENT.md`, and `docs/validation-runbook.md` when the behavior changes
-
-Expected interfaces:
-
-- Shared grader options:
-  - `request_timeout`
-  - `max_retries`
-- Validation runner options:
-  - `--request-timeout`
-  - `--max-retries`
-  - `--resume`
-  - `--retry-failures PATH`
-- Config support under `grading` for timeout and retries
-
-Verification:
-
-- A long local benchmark can run with `max_retries=1`
-- Retry-only sweep reruns failed rows without repeating successful ones
-- Resume mode skips already completed rows
-- Timeout is configurable from validation and the main CLI/config path
-- Docs accurately describe the local-model workflow
-- Tests cover timeout, retry sweep, resume, and failure-artifact behavior
-
-Documentation sync:
-
-- `PIPELINE.md` is the source of truth for this upcoming work
-- `README.md`, `AGENT.md`, and `docs/validation-runbook.md` must be updated once the behavior actually changes
-
-Assumptions:
-
-- This milestone is shared library + CLI + validation work, not validation-only work
-- The focus is reliability and operator workflow, not benchmark methodology changes
-- Documentation sync is part of the milestone, not an optional follow-up
-
-### Milestone 8: Amazon Benchmark Quality And Calibration
-
-Purpose:
-
-- keep Amazon ESCI as the benchmark source
-- improve the derived slice so it stays deterministic but becomes less query-skewed
-- add a smaller fixed calibration slice so broken prompt/model setups are caught before another long run
-
-Tasks:
-
-- Replace the current per-label sampler with a deterministic round-robin sampler by query within each label
-- Keep benchmark defaults:
-  - source: Amazon ESCI
-  - locale: `us`
-  - reduced Task 1 only
-  - target size: `200`
-  - per-label target: `50`
-- Use this sampling rule:
-  - group rows by `human_score`
-  - within each label, group rows by `query`
-  - sort queries by `query_id`, then rows within query by `rank`, then `doc_id`
-  - select one row per query per pass until the per-label cap is reached
-- Add a second derived artifact:
-  - `amazon_product_search_calibration.json`
-  - fixed size: `48` rows
-  - `12` rows per label
-  - generated with the same deterministic round-robin logic
-- Add a benchmark derivation report printed by the prep script and saved as JSON with:
-  - total candidates
-  - per-label counts
-  - unique query count
-  - top query frequencies
-  - title/brand/description coverage and blank-ish counts
-- Do not hand-curate or manually remove hard queries; improve the derivation policy instead
-
-Verification:
-
-- Rerunning derivation with the same source files yields byte-identical benchmark JSON
-- The 200-row slice remains label-balanced
-- Query concentration is materially reduced versus the current slice
-- The calibration slice is stable and reproducible
-
-### Milestone 9: Amazon-Specific Structured Judge
-
-Purpose:
-
-- stop using a generic IR relevance prompt for an ecommerce ESCI benchmark
-- eliminate most parse failures with structured output
-- make the local Qwen/Ollama path explicit instead of relying on prompt hacks
-
-Tasks:
-
-- Add an `amazon_esci` prompt profile for validation
-- Make Amazon validation default to ESCI-aware labels:
-  - `0`: Irrelevant, does not satisfy the shopping intent
-  - `1`: Complement, related add-on/accessory but not the product sought
-  - `2`: Substitute, different product that plausibly satisfies the same shopping need
-  - `3`: Exact or near-exact match to the intended product
-- Ensure Amazon validation prompt rules explicitly handle:
-  - hard constraints like `without`, compatibility, quantity, capacity, and material
-  - brand constraints
-  - price ceilings like `$5 items`
-  - size and age qualifiers like `toddler` vs `youth`
-  - short or ambiguous queries conservatively
-  - no broad intent inflation from a single character or partial token
-- Add structured output mode as the default validation path:
-  - schema contains at minimum `score` and `reasoning`
-  - optional `refusal` or `notes` field is allowed
-- Add provider-aware output control:
-  - `llm.provider`: `auto | ollama | openai_compatible`
-  - `grading.response_mode`: `json_schema | text`
-  - `llm.think: false` support for Ollama-backed runs
-- Use `json_schema` by default when supported, with text parsing only as fallback
-- Keep a text fallback parser, but harden it to accept mild score variants only in fallback mode:
-  - `Score: 1`
-  - `**Relevance Score:** 1`
-  - still reject ambiguous or multi-score outputs
-- Keep `temperature = 0`; do not add temperature tuning work in this milestone
-
-Expected interfaces:
-
-- Shared grader options:
-  - `provider`
-  - `response_mode`
-  - `think`
-- Validation config:
-  - `llm.provider`
-  - `llm.think`
-  - `grading.response_mode`
-  - `grading.prompt_profile`
-- Validation runner options:
-  - `--provider`
-  - `--response-mode`
-  - `--think` and `--no-think`, or an equivalent explicit false-setting flag
-
-Verification:
-
-- Structured-output validation runs produce parseable output without regex dependence on supported providers
-- The Ollama path can disable thinking explicitly
-- Amazon validation uses ESCI semantics by default
-- `smoke` passes with structured output enabled
-
-### Milestone 10: Live Validation Artifacts And Rerun Gates
-
-Purpose:
-
-- make long runs observable while they are happening
-- make failures immediately inspectable
-- prevent another full benchmark run until prompt/model behavior is sane on a smaller gate
-
-Tasks:
-
-- Write validation artifacts incrementally during the run:
-  - append failures immediately
-  - rewrite summary after each completed item
-  - rewrite aligned rows after each completed item for validation runs
-- Add a lightweight benchmark-analysis artifact after each run with:
-  - failure counts by type
-  - parse failures with empty vs non-empty raw output
-  - AI score distribution
-  - per-query failure concentration
-  - score-collapse warnings
-- Update the runbook workflow to:
-  1. run `smoke`
-  2. run the `48`-row calibration slice locally
-  3. run the same calibration slice with a stronger hosted reference judge
-  4. only then run the full `200`-row local benchmark
-- Add a documented two-track validation setup:
-  - `validation.local.yaml` for local Ollama/Qwen
-  - `validation.reference.yaml.example` for a stronger OpenAI-compatible sanity run
-- Update the recommended `validation.local.yaml` to:
-
-```yaml
-llm:
-  base_url: http://localhost:11434/v1
-  api_key: null
-  model: qwen3.5:9b
-  provider: ollama
-  think: false
-
-grading:
-  max_workers: 1
-  passes: 1
-  max_retries: 1
-  request_timeout: 300
-  response_mode: json_schema
-  prompt_profile: amazon_esci
-```
-
-- Add these calibration gates before the next full run:
-  - local calibration:
-    - timeout failures: `0`
-    - total failures: `<= 5%`
-    - score distribution uses at least `3` of `4` labels
-    - no single AI score bucket exceeds `70%` of scored rows
-  - reference calibration:
-    - timeout failures: `0`
-    - parse failures: `0`
-    - no score collapse
-    - Spearman `>= 0.50`
-- If the reference calibration fails, stop and revisit benchmark and prompt design before another full run
-- If the reference passes but local fails, treat it as a local-model limitation rather than a benchmark validity problem
-
-Verification:
-
-- The failures file appears live during runs
-- Summary and aligned files reflect current state before run completion
-- The local config avoids wasted inline retries
-- Calibration gate logic blocks full reruns when the setup is still obviously broken
-
-Documentation sync:
-
-- `docs/amazon-benchmark.md` must describe the improved deterministic sampling policy and the calibration slice
-- `docs/validation-runbook.md` must document the two-track local/reference workflow and rerun gates
-- `README.md` and `AGENT.md` must reflect structured output, ESCI-specific judging, and live artifact behavior once implemented
-
-Assumptions:
-
-- Amazon ESCI remains the benchmark source
-- The current Amazon slice is reproducible but not yet a strong headline benchmark slice
-- Sampling will be improved rather than manually curating rows
-- Validation will use a two-track workflow:
-  - local model as the operator workflow
-  - stronger hosted reference model as the sanity-check path
-- Structured output is the primary path, not prompt-only text parsing
-- `temperature = 0` stays fixed and is not treated as the main cause of the failed run
-
-### Milestone 11: Fast Thesis Test And Validation Runbook Reset
-
-Purpose:
-
-- get a decisive answer quickly on whether the idea still has promise
-- stop wasting time on local-model runs before a trustworthy reference upper bound exists
-- replace hard-to-understand blocking gates with a simpler reference-first runbook
-- keep `temperature = 0` fixed and treat it as a non-issue for now
-
-Tasks:
-
-- Record that this milestone temporarily supersedes the current “full local benchmark first” flow
-- Use this sequencing:
-  1. derive the current Amazon benchmark and calibration slice
-  2. run `smoke` locally
-  3. run one strong frontier reference calibration
-  4. if that passes a viability threshold, run the full reference `200`-row benchmark
-  5. only then run local calibration and local full runs as comparison or cost-saving follow-up
-- Explicitly document that:
-  - the current Amazon slice is acceptable for one fast thesis test
-  - sampler redesign is deferred until after the reference verdict
-  - the local gate must not hard-block exploratory full runs
-  - the reference track is the deciding signal
-- Rewrite the validation runbook around diagnosis instead of blocking:
-  - build datasets
-  - run local smoke
-  - run frontier reference calibration
-  - run full reference benchmark if calibration is viable
-  - then run local calibration and local full benchmark as comparison
-  - keep `max_retries: 1`, high local timeout, and `--resume` / `--retry-failures` cleanup
-- Change gate behavior:
-  - reference calibration gate stays meaningful
-  - local calibration gate becomes advisory
-  - the full benchmark command hard-blocks only when there is no passing reference calibration
-  - blocker messaging must name exact failed conditions
-- Freeze the current benchmark slice for this decisive test:
-  - do not change sampling again before the next reference verdict
-  - if the strong reference run fails badly, revisit slice construction and prompt semantics next
-  - if the strong reference run succeeds reasonably, treat the current slice as sufficient for continued iteration
-- Keep `temperature = 0` fixed in configs and docs; do not add temperature tuning work in this milestone
-
-Reference calibration interpretation:
-
-- if parse failures > `0`, the structured-output or provider path is not stable enough
-- if a score-collapse warning appears, the judge setup is not usable yet
-- if Spearman `< 0.40`, stop and revisit prompt or benchmark fit before any full run
-- if Spearman is `0.40 - 0.59`, continue to the full reference benchmark but treat the thesis as uncertain
-- if Spearman `>= 0.60`, continue confidently to the full reference benchmark
-
-Full reference benchmark interpretation:
-
-- if full-reference Spearman `< 0.50`, the thesis is in serious doubt and should pause for benchmark or prompt redesign
-- if full-reference Spearman is `0.50 - 0.69`, continue iterating but do not publish credibility claims
-- if full-reference Spearman `>= 0.70`, continue with local-model comparison and optimization
-
-Verification:
-
-- gate logic allows the full benchmark when the reference gate passes even if the local gate fails
-- gate logic blocks the full benchmark when the reference gate fails and names the exact failed checks
-- the runbook and config examples match the new reference-first flow
-- `temperature = 0` remains fixed
-- local config remains single-pass and structured-output-first
-
-Documentation sync:
-
-- `docs/validation-runbook.md` becomes the operator-facing source of truth for the reference-first thesis test
-- `README.md` and `AGENT.md` must reflect that local-model results are secondary evidence until the reference upper bound is known
-
-Assumptions:
-
-- Amazon ESCI stays as the benchmark source
-- the current slice is acceptable for a fast thesis test, but not yet for publication-quality claims
-- one stronger paid reference run is allowed and required
-- local-model results are secondary evidence until the reference upper bound is known
-- `temperature = 0` remains fixed
-
-### Milestone 12: Launch Prep, Code Cleanup, And Release Hardening
-
-Purpose:
-
-- treat validation as supporting evidence rather than the core product mission
-- harden the library and CLI for real users before launch
-- reduce avoidable complexity, confusing defaults, and rough edges in the codebase
-- make the repo feel clean, stable, and intentional
-
-Product framing for this milestone:
-
-- the core repo mission is an automation pipeline for AI-generated judgment scores
-- the tool should be usable for search tuning, ranking experiments, offline grading, and other scoring workflows
-- validation work should remain available, but it must not dominate the release story or complicate the core tool experience
-
-Tasks:
-
-- Review the public library and CLI API for naming, consistency, and launch readiness
-- Remove dead code, stale milestone-era scaffolding, and one-off experimental paths that no longer help the launch story
-- Audit config, CLI flags, and defaults so they are predictable and minimally surprising
-- Tighten user-facing errors and help text:
-  - clear problem statement
-  - likely cause
-  - what to try next
-- Review module boundaries and simplify where needed:
-  - keep library-first design
-  - keep CLI thin
-  - avoid validation-specific behavior leaking into the core grading path
-- Add or improve tests for:
-  - core library paths
-  - CLI happy paths
-  - invalid config / invalid prompt / invalid provider setup
-  - resume and failure logging behavior
-- Ensure examples are clean and representative of the intended launch usage
-- Do a final code-quality sweep:
-  - naming
-  - comments
-  - docstrings
-  - imports
-  - duplication
-  - lightweight dependency discipline
-- Identify anything that should remain explicitly out of scope for v1 and document it instead of half-implementing it
-
-Verification:
-
-- the library API feels stable enough to document publicly
-- the CLI help output is understandable without reading the code
-- tests cover the main launch paths and major failure paths
-- there is no obvious stale or experimental behavior confusing the repo story
-- examples and configs still run against fixtures or documented setups
-
-Documentation sync:
-
-- `README.md` must reflect the simplified product framing
-- `AGENT.md` must reflect that launch quality of the core tool now takes priority over benchmark experimentation
-- `docs/validation-runbook.md` should remain available, but clearly secondary to the core usage docs
-
-Assumptions:
-
-- launch polish is now more important than adding new benchmark complexity
-- the repo should optimize for a clear first impression and reliable day-one usage
-- validation remains useful, but it is not the main product narrative
-
-### Milestone 13: Release Packaging, Docs Curation, And Launch Story
-
-Purpose:
-
-- decide what documentation belongs in the launch repo and what does not
-- produce a simple, approachable documentation set for first-time users
-- prepare the repository for public launch and package release
-
-Tasks:
-
-- Curate the markdown surface area of the repo:
-  - keep only the docs that materially help users or contributors
-  - archive, merge, or remove redundant milestone-era docs if they add noise
-- Define the release documentation structure:
-  - `README.md` as the main landing page
-  - concise setup and quickstart
-  - one or two deeper docs for configuration and validation
-  - no cluttered maze of overlapping markdown files
-- Rewrite `README.md` for launch:
-  - what the tool is
-  - what problem it solves
-  - what it does not do
-  - quickstart
-  - library example
-  - CLI example
-  - configuration example
-  - resume/failure behavior
-  - output formats
-  - limitations and expectations
-- Decide which docs should ship prominently, for example:
-  - core usage guide
-  - config guide
-  - optional validation runbook
-  - contributor/developer notes
-- Decide which docs should stay internal or be removed from the launch-facing surface
-- Review packaging and release assets:
-  - `pyproject.toml`
-  - version metadata
-  - license choice
-  - example config file
-  - publish checklist
-- Prepare for PyPI or release packaging:
-  - package metadata
-  - classifiers
-  - entry points
-  - install instructions
-  - release checklist
-- Make sure the repo homepage story is clean and simple enough that a new user can understand it in a few minutes
-
-Verification:
-
-- the final doc set is small, intentional, and easy to navigate
-- `README.md` can onboard a new user without requiring code spelunking
-- release metadata is complete enough for packaging
-- the launch story matches the actual capabilities of the tool
-- optional validation docs do not overshadow the core automation pipeline story
-
-Documentation sync:
-
-- `README.md` becomes the launch-facing source of truth
-- secondary docs must support the README instead of competing with it
-- `AGENT.md` and `PIPELINE.md` should remain contributor-focused, not user-facing clutter
-
-Assumptions:
-
-- simple docs are better than exhaustive docs for launch
-- the core release message should be “AI-powered judgment list generation,” not “benchmark lab”
-- some current markdown files may need to be merged, shortened, or removed before release
-
-## Branching And Review
-
-- Prefer one milestone per branch or PR
-- Keep each PR reviewable in under 500 lines when possible
-- Do not mix validation data work with unrelated library changes
-
-## Testing Standard
-
-Before merging milestone work, run:
-
-```bash
-pytest
-ruff check .
-```
-
-If external services are needed, provide a fixture or mock-first path so local tests remain fast and reliable.
+- compare keeping MIT versus moving to Apache-2.0 or another license
+- document the tradeoff and change only once the project direction is clear
+
+Code focus:
+
+- `LICENSE`
+- `README.md`
+- packaging metadata if needed
+
+Test minimum:
+
+- no code tests required unless packaging metadata changes
+
+## Default Execution Order
+
+Unless the user redirects, work in this order one at a time:
+
+1. M1. Architecture And Code Organization Review
+2. M2. Structured Output Reliability Decision
+3. M3. Retry And Failure-Recovery Semantics
+4. M4. Prompt And Configuration Usability
+5. M5. Naming And Output Language Cleanup
+6. M6. Validation Scope Simplification
+7. M7. Markdown Rewrite Pass
+8. M8. License Review
+
+## Exit Criteria
+
+A milestone is complete when:
+
+- the plan was implemented, not just described
+- focused tests pass
+- broader checks were run when the change crosses module boundaries
+- docs match the shipped behavior
+- the next milestone can start without re-reading stale notes
