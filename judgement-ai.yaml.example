@@ -25,6 +25,6 @@ grading:
 
 output:
   path: judgments.json
-  quepid_path: judgments.csv
+  csv_path: judgments.csv
 
 queries: queries.txt

@@ -25,8 +25,8 @@ def result_to_dict(result: GradeResult) -> dict[str, object]:
     }
 
 
-def write_quepid_csv(results: Iterable[GradeResult], path: str | Path) -> None:
-    """Write results in Quepid-compatible CSV format."""
+def write_csv_export(results: Iterable[GradeResult], path: str | Path) -> None:
+    """Write results in CSV format."""
     output_path = Path(path)
     with output_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=["query", "docid", "rating"])

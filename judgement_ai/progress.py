@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from judgement_ai.grader import GradeProgress
+from judgement_ai.grading import GradeProgress
 
 
 class TerminalProgressReporter:

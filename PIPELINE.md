@@ -16,7 +16,7 @@ The current codebase already supports:
 
 - grading from query files plus pre-fetched JSON results
 - canonical raw judgments JSON output
-- optional CSV export through `--quepid-output` or `export-quepid`
+- optional CSV export through `--csv-output` or `export-csv`
 - config loading from YAML
 - retries, request timeouts, concurrency, and resume
 - `text` and `json_schema` response modes
@@ -40,26 +40,6 @@ For each milestone, write down:
 If a milestone changes public behavior, update docs in the same pass.
 
 ## Active Milestones
-
-### M1. Architecture And Code Organization Review
-
-Plan:
-
-- review whether `judgement_ai/grader.py` and `judgement_ai/cli.py` should be split into smaller modules or packages
-- prefer code splitting that improves readability, types, and testability without changing behavior first
-- use this milestone to answer whether the repo is following good organizational practices, then apply the smallest high-value refactor
-
-Code focus:
-
-- `judgement_ai/grader.py`
-- `judgement_ai/cli.py`
-- neighboring modules affected by extraction boundaries
-
-Test minimum:
-
-- `source .venv/bin/activate`
-- `python3 -m pytest tests/test_grader.py tests/test_cli.py tests/test_resume.py tests/test_output.py`
-- `python3 -m ruff check .`
 
 ### M2. Structured Output Reliability Decision
 
@@ -127,24 +107,6 @@ Test minimum:
 - `source .venv/bin/activate`
 - `python3 -m pytest tests/test_prompts.py tests/test_config.py tests/test_cli.py`
 
-### M5. Naming And Output Language Cleanup
-
-Plan:
-
-- remove Quepid-specific language in the public story
-- keep CSV export support, but describe it more generically
-
-Code focus:
-
-- `judgement_ai/cli.py`
-- `judgement_ai/output.py`
-- `README.md`
-- `docs/configuration.md`
-
-Test minimum:
-
-- `source .venv/bin/activate`
-- `python3 -m pytest tests/test_cli.py tests/test_output.py`
 
 ### M6. Validation Scope Simplification
 

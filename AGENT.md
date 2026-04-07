@@ -8,8 +8,8 @@ Start here, then read `PIPELINE.md` for the current milestone queue.
 
 ## Repo Map
 
-- `judgement_ai/cli.py`: thin CLI with `grade` and `export-quepid`
-- `judgement_ai/grader.py`: grading orchestration, provider calls, retries, parsing
+- `judgement_ai/cli/`: CLI package with `grade` and `export-csv`
+- `judgement_ai/grading/`: grading package with orchestration, provider calls, retries, and parsing
 - `judgement_ai/fetcher.py`: pre-fetched JSON and in-memory fetchers
 - `judgement_ai/prompts.py`: default prompt, prompt loading, placeholder validation
 - `judgement_ai/output.py`: canonical JSON writer and CSV export
@@ -26,7 +26,7 @@ What is clearly implemented now:
 - Library-first design with a thin Click CLI
 - Pre-fetched JSON results as the main grading input
 - Canonical raw judgments JSON as the source of truth
-- Optional Quepid CSV export, either during grading or later
+- Optional CSV export, either during grading or later
 - Resume support based on existing raw judgments JSON
 - Sidecar failure logs for long-running or partial runs
 - Provider support for OpenAI-compatible APIs and Ollama

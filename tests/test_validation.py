@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from judgement_ai.grader import Grader
+from judgement_ai.grading import Grader
 from judgement_ai.validation import (
     ValidationFetcher,
     build_validation_analysis,
@@ -95,7 +95,7 @@ def test_run_validation_benchmark_writes_completed_summary(monkeypatch, tmp_path
         del url, headers, json, timeout
         return next(responses)
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     result = run_validation_benchmark(
         benchmark="smoke",
@@ -128,7 +128,7 @@ def test_run_validation_benchmark_passes_progress_callback(monkeypatch, tmp_path
         del url, headers, json, timeout
         return next(responses)
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     run_validation_benchmark(
         benchmark="smoke",
@@ -165,7 +165,7 @@ def test_run_validation_benchmark_fails_canonical_partial_run(monkeypatch, tmp_p
         del url, headers, json, timeout
         return DummyResponse("Missing strict output")
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     result = run_validation_benchmark(
         benchmark="amazon_product_search",
@@ -204,7 +204,7 @@ def test_run_validation_benchmark_resume_skips_completed_rows(monkeypatch, tmp_p
         calls["count"] += 1
         return DummyResponse("Relevant.\nSCORE: 2")
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     result = run_validation_benchmark(
         benchmark="smoke",
@@ -269,7 +269,7 @@ def test_run_validation_benchmark_retry_failures_only_reruns_failed_rows(
         calls["count"] += 1
         return DummyResponse("Relevant.\nSCORE: 2")
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     result = run_validation_benchmark(
         benchmark="smoke",
@@ -314,7 +314,7 @@ def test_run_validation_benchmark_updates_live_artifacts(monkeypatch, tmp_path) 
                 }
             )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     run_validation_benchmark(
         benchmark="smoke",
@@ -387,7 +387,7 @@ def test_run_validation_benchmark_writes_local_calibration_gate(monkeypatch, tmp
 
         return OllamaResponse()
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = Grader(
         fetcher=ValidationFetcher([]),

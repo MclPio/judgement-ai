@@ -3,7 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from judgement_ai.fetcher import FileResultsFetcher, InMemoryResultsFetcher, ResultsFetcher
-from judgement_ai.grader import Grader
+from judgement_ai.grading import Grader
 from judgement_ai.models import GradeResult
 
 try:

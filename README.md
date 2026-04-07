@@ -20,7 +20,7 @@ The core idea is simple:
 
 - grades search results with an OpenAI-compatible or Ollama-backed model
 - supports file-backed and in-memory result inputs
-- writes canonical raw judgments JSON with optional Quepid CSV export
+- writes canonical raw judgments JSON with optional CSV export
 - runs concurrently for practical throughput
 - writes incrementally so long runs are not lost
 - supports resume and sidecar failure logs
@@ -255,7 +255,7 @@ This raw JSON is the source of truth for:
 - validation/retry flows
 - detailed inspection of reasoning, rank, and optional `pass_scores`
 
-### Optional Quepid CSV Export
+### Optional CSV Export
 
 ```csv
 query,docid,rating
@@ -265,11 +265,11 @@ magnesium for sleep,456,2
 
 This export is intentionally lossy and omits reasoning, rank, and pass scores.
 
-You can produce it during grading with `--quepid-output judgments.csv`, or later from any
+You can produce it during grading with `--csv-output judgments.csv`, or later from any
 canonical raw judgments artifact:
 
 ```bash
-judgement-ai export-quepid \
+judgement-ai export-csv \
   --input judgments.json \
   --output judgments.csv
 ```
@@ -297,7 +297,7 @@ judgement-ai grade \
 If the output file already exists and you are not resuming, the CLI will ask before overwriting it.
 Use `--force` to overwrite without a prompt.
 
-To also export Quepid CSV from the canonical raw JSON:
+To also export CSV from the canonical raw JSON:
 
 ```bash
 judgement-ai grade \
@@ -306,7 +306,7 @@ judgement-ai grade \
   --model gpt-5.1 \
   --api-key "$OPENAI_API_KEY" \
   --output judgments.json \
-  --quepid-output judgments.csv
+  --csv-output judgments.csv
 ```
 
 Config-driven runs can also be fully one-command if the config includes queries, search input,

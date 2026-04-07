@@ -38,7 +38,7 @@ def test_grade_command_uses_results_file_and_writes_json(monkeypatch, tmp_path) 
 
         return DummyResponse()
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -61,7 +61,7 @@ def test_grade_command_uses_results_file_and_writes_json(monkeypatch, tmp_path) 
     assert result.exit_code == 0
     assert "1 successes" in result.output
     assert "1/1 completed" in result.stderr
-    assert "Need Quepid CSV later?" in result.output
+    assert "Need CSV later?" in result.output
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload[0]["doc_id"] == "123"
 
@@ -83,7 +83,7 @@ def test_grade_command_uses_config_file(monkeypatch, tmp_path) -> None:
     )
 
     output_path = tmp_path / "judgments.json"
-    quepid_output_path = tmp_path / "judgments.csv"
+    csv_output_path = tmp_path / "judgments.csv"
     config_path = tmp_path / "judgement-ai.yaml"
     config_path.write_text(
         "\n".join(
@@ -99,7 +99,7 @@ def test_grade_command_uses_config_file(monkeypatch, tmp_path) -> None:
                 "  passes: 1",
                 "output:",
                 f"  path: {output_path}",
-                f"  quepid_path: {quepid_output_path}",
+                f"  csv_path: {csv_output_path}",
                 f"queries: {queries_path}",
             ]
         ),
@@ -122,7 +122,7 @@ def test_grade_command_uses_config_file(monkeypatch, tmp_path) -> None:
 
         return DummyResponse()
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     runner = CliRunner()
     result = runner.invoke(main, ["grade", "--config", str(config_path)])
@@ -130,7 +130,7 @@ def test_grade_command_uses_config_file(monkeypatch, tmp_path) -> None:
     assert result.exit_code == 0
     assert "Completed grading run" in result.output
     assert json.loads(output_path.read_text(encoding="utf-8"))[0]["doc_id"] == "123"
-    assert "query,docid,rating" in quepid_output_path.read_text(encoding="utf-8")
+    assert "query,docid,rating" in csv_output_path.read_text(encoding="utf-8")
 
 
 def test_grade_command_uses_safe_default_output_path_with_config(monkeypatch, tmp_path) -> None:
@@ -177,7 +177,7 @@ def test_grade_command_uses_safe_default_output_path_with_config(monkeypatch, tm
 
             return DummyResponse()
 
-        monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+        monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
         result = runner.invoke(main, ["grade", "--config", str(config_path)])
 
@@ -217,7 +217,7 @@ def test_grade_command_accepts_timeout_and_retry_options(monkeypatch, tmp_path) 
 
         return DummyResponse()
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -277,7 +277,7 @@ def test_grade_command_accepts_temperature_option(monkeypatch, tmp_path) -> None
 
         return DummyResponse()
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -333,7 +333,7 @@ def test_grade_command_uses_safe_default_output_path(monkeypatch, tmp_path) -> N
 
             return DummyResponse()
 
-        monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+        monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
         result = runner.invoke(
             main,
@@ -386,7 +386,7 @@ def test_grade_command_uses_timestamped_default_path_on_collision(monkeypatch, t
 
             return DummyResponse()
 
-        monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+        monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
         result = runner.invoke(
             main,
@@ -468,7 +468,7 @@ def test_grade_command_supports_csv_queries(monkeypatch, tmp_path) -> None:
 
         return DummyResponse()
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -521,7 +521,7 @@ def test_grade_command_requires_json_output_path(monkeypatch, tmp_path) -> None:
 
         return DummyResponse()
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -566,7 +566,7 @@ def test_grade_command_aborts_on_existing_output_without_force(monkeypatch, tmp_
     def fake_post(url: str, *, headers, json, timeout):
         raise AssertionError("provider should not be called when overwrite is declined")
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -622,7 +622,7 @@ def test_grade_command_force_overwrites_and_uses_sidecar_failure_log(monkeypatch
 
         return DummyResponse()
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -650,7 +650,7 @@ def test_grade_command_force_overwrites_and_uses_sidecar_failure_log(monkeypatch
     assert payload[0]["failure_type"] == "parse_error"
 
 
-def test_grade_command_writes_optional_quepid_export(monkeypatch, tmp_path) -> None:
+def test_grade_command_writes_optional_csv_export(monkeypatch, tmp_path) -> None:
     queries_path = tmp_path / "queries.txt"
     queries_path.write_text("vitamin b6\n", encoding="utf-8")
     results_file = tmp_path / "results.json"
@@ -665,7 +665,7 @@ def test_grade_command_writes_optional_quepid_export(monkeypatch, tmp_path) -> N
         encoding="utf-8",
     )
     output_path = tmp_path / "judgments.json"
-    quepid_output_path = tmp_path / "judgments.csv"
+    csv_output_path = tmp_path / "judgments.csv"
 
     def fake_post(url: str, *, headers, json, timeout):
         del url, headers, json, timeout
@@ -679,7 +679,7 @@ def test_grade_command_writes_optional_quepid_export(monkeypatch, tmp_path) -> N
 
         return DummyResponse()
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -696,17 +696,17 @@ def test_grade_command_writes_optional_quepid_export(monkeypatch, tmp_path) -> N
             "test-key",
             "--output",
             str(output_path),
-            "--quepid-output",
-            str(quepid_output_path),
+            "--csv-output",
+            str(csv_output_path),
         ],
     )
 
     assert result.exit_code == 0
-    assert "Exported Quepid CSV to" in result.output
-    assert "query,docid,rating" in quepid_output_path.read_text(encoding="utf-8")
+    assert "Exported CSV to" in result.output
+    assert "query,docid,rating" in csv_output_path.read_text(encoding="utf-8")
 
 
-def test_export_quepid_command_converts_raw_json(tmp_path) -> None:
+def test_export_csv_command_converts_raw_json(tmp_path) -> None:
     input_path = tmp_path / "judgments.json"
     input_path.write_text(
         json.dumps(
@@ -728,7 +728,7 @@ def test_export_quepid_command_converts_raw_json(tmp_path) -> None:
     result = runner.invoke(
         main,
         [
-            "export-quepid",
+            "export-csv",
             "--input",
             str(input_path),
             "--output",
@@ -737,11 +737,11 @@ def test_export_quepid_command_converts_raw_json(tmp_path) -> None:
     )
 
     assert result.exit_code == 0
-    assert "Exported Quepid CSV to" in result.output
+    assert "Exported CSV to" in result.output
     assert "query,docid,rating" in output_path.read_text(encoding="utf-8")
 
 
-def test_export_quepid_command_aborts_on_existing_output_without_force(tmp_path) -> None:
+def test_export_csv_command_aborts_on_existing_output_without_force(tmp_path) -> None:
     input_path = tmp_path / "judgments.json"
     input_path.write_text(
         json.dumps(
@@ -764,7 +764,7 @@ def test_export_quepid_command_aborts_on_existing_output_without_force(tmp_path)
     result = runner.invoke(
         main,
         [
-            "export-quepid",
+            "export-csv",
             "--input",
             str(input_path),
             "--output",

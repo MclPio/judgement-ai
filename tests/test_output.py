@@ -2,7 +2,7 @@ import csv
 import json
 
 from judgement_ai.models import GradeResult
-from judgement_ai.output import JsonResultsWriter, result_to_dict, write_quepid_csv
+from judgement_ai.output import JsonResultsWriter, result_to_dict, write_csv_export
 
 
 def test_result_to_dict_includes_optional_pass_scores() -> None:
@@ -49,9 +49,9 @@ def test_json_results_writer_appends_valid_json(tmp_path) -> None:
     assert [item.name for item in tmp_path.iterdir()] == ["judgments.json"]
 
 
-def test_write_quepid_csv_writes_rows(tmp_path) -> None:
+def test_write_csv_export_writes_rows(tmp_path) -> None:
     path = tmp_path / "judgments.csv"
-    write_quepid_csv(
+    write_csv_export(
         [
             GradeResult(
                 query="vitamin b6",

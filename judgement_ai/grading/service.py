@@ -1,20 +1,29 @@
-"""Core grading orchestration."""
+"""Core grading orchestration service."""
 
 from __future__ import annotations
 
 import json
-import re
-from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from typing import Any
 
-import requests
-
 from judgement_ai.fetcher import ResultsFetcher, SearchResult
+from judgement_ai.grading.parsing import (
+    build_json_schema,
+    parse_structured_response,
+    parse_text_response,
+    select_final_score,
+)
+from judgement_ai.grading.providers import call_llm, ollama_api_root, resolve_provider
+from judgement_ai.grading.types import (
+    GradeFailure,
+    GradeItemCallback,
+    GradeProgress,
+    ParseError,
+    ProviderError,
+)
 from judgement_ai.models import GradeResult
 from judgement_ai.output import JsonResultsWriter, ResultsWriter
 from judgement_ai.prompts import (
@@ -25,60 +34,6 @@ from judgement_ai.prompts import (
     validate_scale_labels,
 )
 from judgement_ai.resume import load_completed_pairs
-
-SCORE_PATTERN = re.compile(r"^SCORE:\s*(-?\d+)\s*$", re.MULTILINE)
-SCORE_VARIANT_PATTERNS = [
-    re.compile(r"^Score:\s*(-?\d+)\s*$", re.MULTILINE),
-    re.compile(r"^\*\*Relevance Score:\*\*\s*(-?\d+)\s*$", re.MULTILINE),
-]
-
-
-@dataclass(slots=True)
-class GradeFailure:
-    """A failed query/document grading attempt after retries."""
-
-    query: str
-    doc_id: str
-    rank: int
-    failure_type: str
-    error: str
-    attempts: int
-    raw_response: str | None = None
-
-
-@dataclass(slots=True)
-class GradeProgress:
-    """Structured progress event emitted during grading."""
-
-    event: str
-    total: int
-    completed: int
-    successes: int
-    failures: int
-    skipped: int
-    elapsed_seconds: float
-    query: str | None = None
-    doc_id: str | None = None
-    attempts: int | None = None
-
-
-class ParseError(ValueError):
-    """Raised when the LLM response cannot be parsed safely."""
-
-    def __init__(self, message: str, *, raw_response: str) -> None:
-        super().__init__(message)
-        self.raw_response = raw_response
-
-
-class ProviderError(RuntimeError):
-    """Raised when the provider request or response fails."""
-
-    def __init__(self, message: str, *, failure_type: str) -> None:
-        super().__init__(message)
-        self.failure_type = failure_type
-
-
-GradeItemCallback = Callable[[GradeResult | GradeFailure], None]
 
 
 class Grader:
@@ -145,11 +100,7 @@ class Grader:
     @property
     def resolved_provider(self) -> str:
         """Resolve the concrete provider implementation."""
-        if self.provider != "auto":
-            return self.provider
-        if "localhost:11434" in self.llm_base_url or "127.0.0.1:11434" in self.llm_base_url:
-            return "ollama"
-        return "openai_compatible"
+        return resolve_provider(llm_base_url=self.llm_base_url, provider=self.provider)
 
     def grade(
         self,
@@ -345,9 +296,7 @@ class Grader:
                 pass_results = self._run_passes(query=query, item=item)
                 final_score = self._select_final_score([score for score, _ in pass_results])
                 final_reasoning = next(
-                    reasoning
-                    for score, reasoning in pass_results
-                    if score == final_score
+                    reasoning for score, reasoning in pass_results if score == final_score
                 )
                 return GradeResult(
                     query=query,
@@ -404,171 +353,19 @@ class Grader:
 
     def _call_llm(self, *, prompt: str) -> str | dict[str, Any]:
         """Call the configured LLM provider and return the message content."""
-        if self.resolved_provider == "ollama":
-            return self._call_ollama(prompt=prompt)
-        return self._call_openai_compatible(prompt=prompt)
-
-    def _call_openai_compatible(self, *, prompt: str) -> str | dict[str, Any]:
-        """Call an OpenAI-compatible chat completions endpoint."""
-        headers = {"Content-Type": "application/json"}
-        if self.llm_api_key:
-            headers["Authorization"] = f"Bearer {self.llm_api_key}"
-
-        payload: dict[str, Any] = {
-            "model": self.llm_model,
-            "temperature": self.temperature,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        if self.response_mode == "json_schema":
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "judgement_ai_grade_result",
-                    "strict": True,
-                    "schema": self._json_schema(),
-                },
-            }
-
-        try:
-            response = requests.post(
-                f"{self.llm_base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=self.request_timeout,
-            )
-            response.raise_for_status()
-        except requests.Timeout as exc:
-            msg = f"LLM request timed out after {self.request_timeout} seconds."
-            raise ProviderError(msg, failure_type="timeout") from exc
-        except requests.RequestException as exc:
-            msg = self._build_provider_error_message(exc)
-            raise ProviderError(msg, failure_type="provider_error") from exc
-
-        data = response.json()
-        message = self._extract_openai_message_content(data)
-        if self.response_mode == "json_schema":
-            return self._decode_json_message(message)
-        return message
-
-    def _call_ollama(self, *, prompt: str) -> str | dict[str, Any]:
-        """Call Ollama's native chat API for think control and structured outputs."""
-        payload: dict[str, Any] = {
-            "model": self.llm_model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-            "options": {"temperature": self.temperature},
-        }
-        if self.think is not None:
-            payload["think"] = self.think
-        if self.response_mode == "json_schema":
-            payload["format"] = self._json_schema()
-
-        try:
-            response = requests.post(
-                f"{self._ollama_api_root()}/api/chat",
-                headers={"Content-Type": "application/json"},
-                json=payload,
-                timeout=self.request_timeout,
-            )
-            response.raise_for_status()
-        except requests.Timeout as exc:
-            msg = f"LLM request timed out after {self.request_timeout} seconds."
-            raise ProviderError(msg, failure_type="timeout") from exc
-        except requests.RequestException as exc:
-            msg = self._build_provider_error_message(exc)
-            raise ProviderError(msg, failure_type="provider_error") from exc
-
-        data = response.json()
-        message = self._extract_ollama_message_content(data)
-        if self.response_mode == "json_schema":
-            return self._decode_json_message(message)
-        return message
-
-    def _extract_openai_message_content(self, data: dict[str, Any]) -> str:
-        """Extract text content from an OpenAI-compatible chat completion."""
-        try:
-            message = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise ProviderError(
-                "LLM response did not contain a chat completion message.",
-                failure_type="provider_error",
-            ) from exc
-
-        if isinstance(message, str):
-            return message
-
-        if isinstance(message, list):
-            text_parts = [
-                part.get("text", "")
-                for part in message
-                if isinstance(part, dict) and part.get("type") == "text"
-            ]
-            if text_parts:
-                return "\n".join(text_parts)
-
-        raise ProviderError(
-            "LLM response message content was not a supported text format.",
-            failure_type="provider_error",
+        return call_llm(
+            llm_base_url=self.llm_base_url,
+            llm_api_key=self.llm_api_key,
+            llm_model=self.llm_model,
+            temperature=self.temperature,
+            provider=self.provider,
+            response_mode=self.response_mode,
+            think=self.think,
+            request_timeout=self.request_timeout,
+            prompt=prompt,
+            scale_min=self.scale_min,
+            scale_max=self.scale_max,
         )
-
-    def _extract_ollama_message_content(self, data: dict[str, Any]) -> str:
-        """Extract text content from an Ollama chat response."""
-        try:
-            message = data["message"]["content"]
-        except (KeyError, TypeError) as exc:
-            raise ProviderError(
-                "LLM response did not contain an Ollama chat message.",
-                failure_type="provider_error",
-            ) from exc
-        if not isinstance(message, str):
-            raise ProviderError(
-                "LLM response message content was not a supported text format.",
-                failure_type="provider_error",
-            )
-        return message
-
-    def _decode_json_message(self, message: str) -> dict[str, Any]:
-        """Decode a structured JSON response."""
-        try:
-            payload = json.loads(message)
-        except json.JSONDecodeError as exc:
-            raise ParseError(
-                "LLM response was not valid JSON for structured output mode.",
-                raw_response=message,
-            ) from exc
-        if not isinstance(payload, dict):
-            raise ParseError(
-                "LLM response JSON must decode to an object.",
-                raw_response=message,
-            )
-        return payload
-
-    def _build_provider_error_message(self, exc: requests.RequestException) -> str:
-        """Build a more actionable provider error message."""
-        message = f"Failed to call LLM provider: {exc}"
-        response = getattr(exc, "response", None)
-        status_code = getattr(response, "status_code", None)
-        response_text = self._response_text(response)
-        if response_text:
-            message = f"{message}. Response body: {response_text}"
-        if status_code == 400 and self.response_mode == "json_schema":
-            message = (
-                f"{message}. If you are using a routed OpenAI-compatible provider, "
-                "retry with text mode to confirm structured-output support."
-            )
-        return message
-
-    def _response_text(self, response: Any) -> str | None:
-        """Extract a short response body snippet from an HTTP error response."""
-        if response is None:
-            return None
-        text = getattr(response, "text", None)
-        if not isinstance(text, str) or not text.strip():
-            return None
-        compact = " ".join(text.split())
-        if len(compact) <= 300:
-            return compact
-        return f"{compact[:297]}..."
 
     def parse_response(
         self,
@@ -577,101 +374,32 @@ class Grader:
         allow_variants: bool = False,
     ) -> tuple[int, str]:
         """Parse reasoning and a score line from the model response."""
-        matches = SCORE_PATTERN.findall(response_text)
-        matched_pattern = SCORE_PATTERN
-        if not matches and allow_variants:
-            for pattern in SCORE_VARIANT_PATTERNS:
-                matches = pattern.findall(response_text)
-                if matches:
-                    matched_pattern = pattern
-                    break
-        if not matches:
-            raise ParseError(
-                "LLM response did not contain a 'SCORE: <integer>' line.",
-                raw_response=response_text,
-            )
-        if len(matches) > 1:
-            raise ParseError(
-                "LLM response contained multiple SCORE lines.",
-                raw_response=response_text,
-            )
-
-        score = int(matches[0])
-        if not self.scale_min <= score <= self.scale_max:
-            raise ParseError(
-                f"LLM response score {score} was outside the allowed range "
-                f"{self.scale_min}-{self.scale_max}.",
-                raw_response=response_text,
-            )
-
-        score_match = matched_pattern.search(response_text)
-        assert score_match is not None
-        reasoning = response_text[: score_match.start()].strip()
-        return score, reasoning
+        return parse_text_response(
+            response_text,
+            scale_min=self.scale_min,
+            scale_max=self.scale_max,
+            allow_variants=allow_variants,
+        )
 
     def parse_structured_response(self, response_payload: str | dict[str, Any]) -> tuple[int, str]:
         """Parse score and reasoning from a structured JSON response."""
-        payload = (
-            self._decode_json_message(response_payload)
-            if isinstance(response_payload, str)
-            else response_payload
+        return parse_structured_response(
+            response_payload,
+            scale_min=self.scale_min,
+            scale_max=self.scale_max,
         )
-
-        score = payload.get("score")
-        if not isinstance(score, int):
-            raise ParseError(
-                "LLM response JSON did not contain an integer 'score'.",
-                raw_response=json.dumps(payload),
-            )
-        if not self.scale_min <= score <= self.scale_max:
-            raise ParseError(
-                f"LLM response score {score} was outside the allowed range "
-                f"{self.scale_min}-{self.scale_max}.",
-                raw_response=json.dumps(payload),
-            )
-
-        reasoning = payload.get("reasoning")
-        if not isinstance(reasoning, str):
-            raise ParseError(
-                "LLM response JSON did not contain a string 'reasoning'.",
-                raw_response=json.dumps(payload),
-            )
-        return score, reasoning.strip()
 
     def _json_schema(self) -> dict[str, Any]:
         """Return the structured response schema for grading."""
-        return {
-            "type": "object",
-            "properties": {
-                "score": {
-                    "type": "integer",
-                    "minimum": self.scale_min,
-                    "maximum": self.scale_max,
-                },
-                "reasoning": {"type": "string"},
-                "notes": {"type": "string"},
-                "refusal": {"type": "string"},
-            },
-            "required": ["score", "reasoning"],
-            "additionalProperties": False,
-        }
+        return build_json_schema(scale_min=self.scale_min, scale_max=self.scale_max)
 
     def _ollama_api_root(self) -> str:
         """Normalize an Ollama-compatible base URL to the native API root."""
-        if self.llm_base_url.endswith("/v1"):
-            return self.llm_base_url[: -len("/v1")]
-        return self.llm_base_url.rstrip("/")
+        return ollama_api_root(self.llm_base_url)
 
     def _select_final_score(self, scores: list[int]) -> int:
         """Select the majority score, or the middle value when tied."""
-        counts = Counter(scores)
-        top_count = max(counts.values())
-        winners = [score for score, count in counts.items() if count == top_count]
-        if len(winners) == 1:
-            return winners[0]
-
-        sorted_scores = sorted(scores)
-        return sorted_scores[len(sorted_scores) // 2]
+        return select_final_score(scores)
 
     def _write_failures(
         self,

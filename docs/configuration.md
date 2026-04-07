@@ -34,7 +34,7 @@ grading:
 
 output:
   path: judgments.json
-  quepid_path: judgments.csv
+  csv_path: judgments.csv
 
 queries: queries.txt
 ```
@@ -224,9 +224,9 @@ If `output.path` is omitted entirely, the CLI falls back to a safe local default
 - `judgments.json` when that path does not exist
 - `judgments-YYYYMMDD-HHMMSS.json` when `judgments.json` already exists
 
-### `quepid_path`
+### `csv_path`
 
-Optional Quepid CSV export path derived from the canonical raw judgments JSON.
+Optional CSV export path derived from the canonical raw judgments JSON.
 
 This export is lossy by design and includes only:
 
@@ -256,7 +256,7 @@ judgement-ai grade \
   --output judgments.json
 ```
 
-If your config already provides the canonical output path and optional `quepid_path`, a full run can
+If your config already provides the canonical output path and optional `csv_path`, a full run can
 be as simple as:
 
 ```bash

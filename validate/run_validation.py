@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from judgement_ai.config import load_config
 from judgement_ai.fetcher import FileResultsFetcher
-from judgement_ai.grader import Grader
+from judgement_ai.grading import Grader
 from judgement_ai.progress import TerminalProgressReporter
 from judgement_ai.validation import run_validation_benchmark
 
