@@ -1,11 +1,14 @@
-"""Output helpers for judgement lists."""
+"""Writers and export helpers for judgement lists."""
 
 from __future__ import annotations
 
 import csv
 import json
+import os
+import tempfile
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Protocol
 
 from judgement_ai.models import GradeResult
 
@@ -38,33 +41,11 @@ def write_quepid_csv(results: Iterable[GradeResult], path: str | Path) -> None:
             )
 
 
-def write_json(results: Iterable[GradeResult], path: str | Path) -> None:
-    """Write results in JSON format."""
-    payload = [result_to_dict(result) for result in results]
-    Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+class ResultsWriter(Protocol):
+    """Interface implemented by runtime result writers."""
 
-
-def load_json_results(path: str | Path) -> list[GradeResult]:
-    """Load grade results from a JSON output file."""
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        raise ValueError("JSON results file must contain a list of graded results.")
-
-    results: list[GradeResult] = []
-    for item in payload:
-        if not isinstance(item, dict):
-            raise ValueError("Each JSON result entry must be an object.")
-        results.append(
-            GradeResult(
-                query=str(item["query"]),
-                doc_id=str(item["doc_id"]),
-                score=int(item["score"]),
-                reasoning=str(item["reasoning"]),
-                rank=int(item.get("rank", 1)),
-                pass_scores=[int(score) for score in item.get("pass_scores", [])],
-            )
-        )
-    return results
+    def append(self, result: GradeResult) -> None:
+        """Persist one completed result."""
 
 
 class JsonResultsWriter:
@@ -75,9 +56,26 @@ class JsonResultsWriter:
         self._results = self._load_existing()
 
     def append(self, result: GradeResult) -> None:
-        """Append one result and rewrite the JSON array atomically."""
+        """Append one result and rewrite the JSON array via atomic replace."""
         self._results.append(result_to_dict(result))
-        self.path.write_text(json.dumps(self._results, indent=2), encoding="utf-8")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(self._results, indent=2)
+        temp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                delete=False,
+            ) as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+                temp_path = handle.name
+            os.replace(temp_path, self.path)
+        finally:
+            if temp_path is not None and os.path.exists(temp_path):
+                os.unlink(temp_path)
 
     def _load_existing(self) -> list[dict[str, object]]:
         if not self.path.exists():
@@ -87,27 +85,3 @@ class JsonResultsWriter:
         if not isinstance(payload, list):
             raise ValueError("JSON output file must contain a list of graded results.")
         return payload
-
-
-class QuepidCsvWriter:
-    """Append Quepid-compatible CSV rows incrementally."""
-
-    def __init__(self, path: str | Path) -> None:
-        self.path = Path(path)
-        self.fieldnames = ["query", "docid", "rating"]
-        if not self.path.exists():
-            with self.path.open("w", encoding="utf-8", newline="") as handle:
-                writer = csv.DictWriter(handle, fieldnames=self.fieldnames)
-                writer.writeheader()
-
-    def append(self, result: GradeResult) -> None:
-        """Append one result row to the CSV output."""
-        with self.path.open("a", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=self.fieldnames)
-            writer.writerow(
-                {
-                    "query": result.query,
-                    "docid": result.doc_id,
-                    "rating": result.score,
-                }
-            )

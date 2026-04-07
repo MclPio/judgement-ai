@@ -11,7 +11,7 @@ from typing import Any
 from judgement_ai.fetcher import SearchResult
 from judgement_ai.grader import GradeFailure, Grader
 from judgement_ai.models import GradeResult
-from judgement_ai.output import load_json_results
+from judgement_ai.results_io import load_json_results
 
 
 @dataclass(slots=True)

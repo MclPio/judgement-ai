@@ -16,7 +16,7 @@ import requests
 
 from judgement_ai.fetcher import ResultsFetcher, SearchResult
 from judgement_ai.models import GradeResult
-from judgement_ai.output import JsonResultsWriter, QuepidCsvWriter
+from judgement_ai.output import JsonResultsWriter, ResultsWriter
 from judgement_ai.prompts import (
     DEFAULT_SCALE_LABELS,
     build_prompt,
@@ -265,16 +265,14 @@ class Grader:
         *,
         output_path: str | Path | None,
         output_format: str | None,
-    ) -> JsonResultsWriter | QuepidCsvWriter | None:
-        """Create an incremental output writer when configured."""
+    ) -> ResultsWriter | None:
+        """Create the canonical incremental output writer when configured."""
         if output_path is None:
             return None
 
-        if output_format == "json":
-            return JsonResultsWriter(output_path)
-        if output_format == "quepid_csv":
-            return QuepidCsvWriter(output_path)
-        raise ValueError("output_format must be one of: 'json', 'quepid_csv', or None.")
+        if output_format not in {None, "json"}:
+            raise ValueError("output_format must be 'json' or None.")
+        return JsonResultsWriter(output_path)
 
     def _handle_completed_result(
         self,
@@ -282,7 +280,7 @@ class Grader:
         result: GradeResult | GradeFailure,
         graded_results: list[GradeResult],
         failures: list[GradeFailure],
-        writer: JsonResultsWriter | QuepidCsvWriter | None,
+        writer: ResultsWriter | None,
         failed_log_path: str | Path | None,
         progress_callback: Callable[[GradeProgress], None] | None,
         item_callback: GradeItemCallback | None,

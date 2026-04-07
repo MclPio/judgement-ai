@@ -24,7 +24,7 @@ grading:
   prompt_file: null
 
 output:
-  format: quepid_csv
-  path: judgments.csv
+  path: judgments.json
+  quepid_path: judgments.csv
 
 queries: queries.txt

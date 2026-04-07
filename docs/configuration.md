@@ -33,8 +33,8 @@ grading:
   prompt_file: null
 
 output:
-  format: json
   path: judgments.json
+  quepid_path: judgments.csv
 
 queries: queries.txt
 ```
@@ -206,23 +206,33 @@ This is the main prompt override hook for the core tool.
 
 ## `output`
 
-### `format`
-
-One of:
-
-- `json`
-- `quepid_csv`
-
-If omitted in the CLI, the tool can infer the format from the output file extension.
-
 ### `path`
 
-Where to write the judgments file.
+Where to write the canonical raw judgments JSON file.
+
+This should be a `.json` path.
 
 The CLI also writes a sidecar failure log next to it:
 
 - `judgments.json`
 - `judgments-failures.json`
+
+Resume and retry logic use this canonical raw JSON artifact.
+
+If `output.path` is omitted entirely, the CLI falls back to a safe local default:
+
+- `judgments.json` when that path does not exist
+- `judgments-YYYYMMDD-HHMMSS.json` when `judgments.json` already exists
+
+### `quepid_path`
+
+Optional Quepid CSV export path derived from the canonical raw judgments JSON.
+
+This export is lossy by design and includes only:
+
+- `query`
+- `docid`
+- `rating`
 
 ## `queries`
 
@@ -244,6 +254,13 @@ judgement-ai grade \
   --config judgement-ai.yaml \
   --model gpt-5.1 \
   --output judgments.json
+```
+
+If your config already provides the canonical output path and optional `quepid_path`, a full run can
+be as simple as:
+
+```bash
+judgement-ai grade --config judgement-ai.yaml
 ```
 
 ## Recommended Starting Points

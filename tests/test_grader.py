@@ -507,8 +507,8 @@ def test_grade_writes_incremental_json_output(monkeypatch, tmp_path) -> None:
     assert payload[0]["doc_id"] == "123"
 
 
-def test_grade_writes_incremental_csv_output(monkeypatch, tmp_path) -> None:
-    output_path = tmp_path / "judgments.csv"
+def test_grade_rejects_non_json_runtime_output_format(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "judgments.json"
 
     def fake_post(url: str, *, headers, json, timeout):
         del url, headers, json, timeout
@@ -519,14 +519,13 @@ def test_grade_writes_incremental_csv_output(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
 
     grader = make_grader()
-    grader.grade(
-        queries=["vitamin b6"],
-        output_path=output_path,
-        output_format="quepid_csv",
-        failed_log_path=None,
-    )
-
-    assert "query,docid,rating" in output_path.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="output_format must be 'json' or None"):
+        grader.grade(
+            queries=["vitamin b6"],
+            output_path=output_path,
+            output_format="quepid_csv",
+            failed_log_path=None,
+        )
 
 
 def test_grade_emits_progress_events_for_start_skip_and_finish(monkeypatch, tmp_path) -> None:

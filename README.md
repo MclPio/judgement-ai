@@ -20,7 +20,7 @@ The core idea is simple:
 
 - grades search results with an OpenAI-compatible or Ollama-backed model
 - supports file-backed and in-memory result inputs
-- writes Quepid-compatible CSV or detailed JSON
+- writes canonical raw judgments JSON with optional Quepid CSV export
 - runs concurrently for practical throughput
 - writes incrementally so long runs are not lost
 - supports resume and sidecar failure logs
@@ -67,6 +67,10 @@ judgement-ai grade \
   --output judgments.json
 ```
 
+If you omit `--output`, the CLI creates a safe local raw-judgments path automatically.
+When `judgments.json` already exists, it falls back to a timestamped path like
+`judgments-20260407-153000.json` instead of overwriting silently.
+
 ### Local Ollama example
 
 ```bash
@@ -103,7 +107,6 @@ grader = Grader(
 results = grader.grade(
     queries=["vitamin b6", "magnesium for sleep"],
     output_path="judgments.json",
-    output_format="json",
 )
 
 print(len(results))
@@ -230,15 +233,9 @@ For example, this will be visible to the model:
 
 ## Outputs
 
-### Quepid CSV
+The canonical grading artifact is full-fidelity JSON.
 
-```csv
-query,docid,rating
-vitamin b6,123,3
-magnesium for sleep,456,2
-```
-
-### JSON
+### Canonical Raw Judgments JSON
 
 ```json
 [
@@ -252,13 +249,38 @@ magnesium for sleep,456,2
 ]
 ```
 
+This raw JSON is the source of truth for:
+
+- resume
+- validation/retry flows
+- detailed inspection of reasoning, rank, and optional `pass_scores`
+
+### Optional Quepid CSV Export
+
+```csv
+query,docid,rating
+vitamin b6,123,3
+magnesium for sleep,456,2
+```
+
+This export is intentionally lossy and omits reasoning, rank, and pass scores.
+
+You can produce it during grading with `--quepid-output judgments.csv`, or later from any
+canonical raw judgments artifact:
+
+```bash
+judgement-ai export-quepid \
+  --input judgments.json \
+  --output judgments.csv
+```
+
 ## Resume And Failure Handling
 
 Long runs are meant to be recoverable.
 
 - successful results are written incrementally
 - failed items are written to a sidecar `*-failures.json`
-- `--resume` skips already completed `(query, doc_id)` pairs
+- `--resume` skips already completed `(query, doc_id)` pairs from the canonical raw JSON artifact
 
 Example:
 
@@ -274,6 +296,25 @@ judgement-ai grade \
 
 If the output file already exists and you are not resuming, the CLI will ask before overwriting it.
 Use `--force` to overwrite without a prompt.
+
+To also export Quepid CSV from the canonical raw JSON:
+
+```bash
+judgement-ai grade \
+  --queries queries.txt \
+  --results-file results.json \
+  --model gpt-5.1 \
+  --api-key "$OPENAI_API_KEY" \
+  --output judgments.json \
+  --quepid-output judgments.csv
+```
+
+Config-driven runs can also be fully one-command if the config includes queries, search input,
+and optional output paths:
+
+```bash
+judgement-ai grade --config judgement-ai.yaml
+```
 
 ## Configuration
 

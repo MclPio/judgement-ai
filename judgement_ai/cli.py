@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,13 +13,55 @@ from judgement_ai import __version__
 from judgement_ai.config import load_config
 from judgement_ai.fetcher import FileResultsFetcher
 from judgement_ai.grader import Grader
+from judgement_ai.output import write_quepid_csv
 from judgement_ai.progress import TerminalProgressReporter
+from judgement_ai.results_io import load_json_results
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(version=__version__, prog_name="judgement-ai")
 def main() -> None:
     """Entry point for the judgement-ai CLI."""
+
+
+@main.command("export-quepid")
+@click.option(
+    "--input",
+    "input_path",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Canonical raw judgments JSON file to export.",
+)
+@click.option(
+    "--output",
+    "output_path",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Quepid CSV output path.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Overwrite existing output files without prompting.",
+)
+def export_quepid(
+    input_path: Path,
+    output_path: Path,
+    force: bool,
+) -> None:
+    """Export canonical raw judgments JSON as Quepid CSV."""
+    _validate_raw_output_path(input_path)
+    _validate_csv_output_path(output_path)
+    results = load_json_results(input_path)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _prepare_single_output_file(path=output_path, force=force)
+    write_quepid_csv(results, output_path)
+
+    click.echo(f"Loaded canonical raw judgments from {input_path}.")
+    click.echo(f"Exported Quepid CSV to {output_path}.")
+    click.echo(f"Wrote {len(results)} rows.")
 
 
 @main.command()
@@ -47,12 +90,13 @@ def main() -> None:
     "--output",
     "output_path",
     type=click.Path(path_type=Path),
-    help="Output file path for judgments.",
+    help="Canonical raw judgments JSON output path. Defaults to a safe local path when omitted.",
 )
 @click.option(
-    "--output-format",
-    type=click.Choice(["quepid_csv", "json"]),
-    help="Output format to write.",
+    "--quepid-output",
+    "quepid_output_path",
+    type=click.Path(path_type=Path),
+    help="Optional Quepid CSV export path derived from the canonical JSON output.",
 )
 @click.option("--domain", "domain_context", type=str, help="Optional domain context.")
 @click.option("--workers", "max_workers", type=int, help="Maximum concurrent workers.")
@@ -91,7 +135,7 @@ def grade(
     base_url: str | None,
     api_key: str | None,
     output_path: Path | None,
-    output_format: str | None,
+    quepid_output_path: Path | None,
     domain_context: str | None,
     max_workers: int | None,
     passes: int | None,
@@ -124,22 +168,20 @@ def grade(
         results_file=results_file or _config_path(search_config, "results_file"),
     )
 
-    final_output_path = _require_output_path(
+    final_output_path, output_path_was_defaulted = _resolve_output_path(
         output_path=output_path,
         output_config=output_config,
+        resume=resume,
     )
+    _validate_raw_output_path(final_output_path)
+    final_quepid_output_path = quepid_output_path or _config_path(output_config, "quepid_path")
     failed_log_path = _default_failure_log_path(final_output_path)
     _prepare_output_files(
         output_path=final_output_path,
         failed_log_path=failed_log_path,
+        quepid_output_path=final_quepid_output_path,
         resume=resume,
         force=force,
-    )
-
-    final_output_format = _resolve_output_format(
-        explicit_format=output_format,
-        config_format=_config_str(output_config, "format"),
-        output_path=final_output_path,
     )
     grader = _build_grader(
         fetcher=fetcher,
@@ -159,25 +201,51 @@ def grade(
         think=think,
         prompt_file=prompt_file,
     )
-    reporter = TerminalProgressReporter(label="grade")
+    reporter = TerminalProgressReporter(
+        label="grade",
+        output_path=str(final_output_path),
+        resume=resume,
+    )
+
+    if output_path_was_defaulted:
+        click.echo(f"No output path provided. Using {final_output_path}.")
 
     results = grader.grade(
         queries=queries,
         resume_from=final_output_path if resume else None,
         failed_log_path=failed_log_path,
         output_path=final_output_path,
-        output_format=final_output_format,
         progress_callback=reporter,
     )
 
+    if final_quepid_output_path is not None:
+        all_results = load_json_results(final_output_path)
+        write_quepid_csv(all_results, final_quepid_output_path)
+
+    summary = grader.last_summary
     click.echo(
         "Completed grading run: "
-        f"{grader.last_summary['successes']} successes, "
-        f"{grader.last_summary['failures']} failures, "
-        f"{grader.last_summary['skipped']} skipped."
+        f"{summary['successes']} successes, "
+        f"{summary['failures']} failures, "
+        f"{summary['skipped']} skipped."
     )
-    click.echo(f"Wrote {len(results)} new results to {final_output_path}.")
-    if grader.last_summary["failures"] > 0:
+    click.echo(f"Wrote canonical raw judgments to {final_output_path}.")
+    if resume:
+        click.echo(
+            "Resume mode reused existing raw judgments "
+            f"and skipped {summary['skipped']} items."
+        )
+    if final_quepid_output_path is not None:
+        click.echo(f"Exported Quepid CSV to {final_quepid_output_path}.")
+    else:
+        suggested_export_path = final_output_path.with_suffix(".csv")
+        click.echo(
+            "Need Quepid CSV later? "
+            "Run `judgement-ai export-quepid "
+            f"--input {final_output_path} --output {suggested_export_path}`."
+        )
+    click.echo(f"Wrote {len(results)} new results in this run.")
+    if summary["failures"] > 0:
         click.echo(f"Failure details were written to {failed_log_path}.")
 
 
@@ -269,12 +337,51 @@ def _config_bool(config: dict[str, Any], key: str) -> bool | None:
     return value if isinstance(value, bool) else None
 
 
-def _require_output_path(*, output_path: Path | None, output_config: dict[str, Any]) -> Path:
-    """Resolve the output path or raise a clear CLI error."""
+def _resolve_output_path(
+    *,
+    output_path: Path | None,
+    output_config: dict[str, Any],
+    resume: bool,
+) -> tuple[Path, bool]:
+    """Resolve an explicit or safe default canonical output path."""
     resolved = output_path or _config_path(output_config, "path")
-    if resolved is None:
-        raise click.UsageError("Provide --output or set output.path in the config file.")
-    return resolved
+    if resolved is not None:
+        return resolved, False
+    return _default_output_path(cwd=Path.cwd(), resume=resume), True
+
+
+def _default_output_path(*, cwd: Path, resume: bool) -> Path:
+    """Return a safe default raw judgments path in the current directory."""
+    base_path = cwd / "judgments.json"
+    if resume or not base_path.exists():
+        return base_path
+    return _timestamped_variant(base_path)
+
+
+def _timestamped_variant(path: Path) -> Path:
+    """Return a unique timestamped sibling path derived from the provided base path."""
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    candidate = path.with_name(f"{path.stem}-{timestamp}{path.suffix}")
+    counter = 2
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem}-{timestamp}-{counter}{path.suffix}")
+        counter += 1
+    return candidate
+
+
+def _validate_raw_output_path(output_path: Path) -> None:
+    """Ensure the canonical output path is a JSON file."""
+    if output_path.suffix.lower() != ".json":
+        raise click.UsageError(
+            "Canonical raw judgments output must be a .json file. "
+            "Use --quepid-output for optional CSV export."
+        )
+
+
+def _validate_csv_output_path(output_path: Path) -> None:
+    """Ensure the export output path is a CSV file."""
+    if output_path.suffix.lower() != ".csv":
+        raise click.UsageError("Quepid export output must be a .csv file.")
 
 
 def _build_grader(
@@ -344,52 +451,43 @@ def _default_failure_log_path(output_path: Path) -> Path:
     return output_path.with_name(f"{output_path.stem}-failures.json")
 
 
-def _resolve_output_format(
-    *,
-    explicit_format: str | None,
-    config_format: str | None,
-    output_path: Path,
-) -> str:
-    """Resolve the output format from explicit flags, config, or file extension."""
-    if explicit_format is not None:
-        return explicit_format
-    if config_format is not None:
-        return config_format
-    suffix = output_path.suffix.lower()
-    if suffix == ".json":
-        return "json"
-    if suffix == ".csv":
-        return "quepid_csv"
-    return "quepid_csv"
-
-
 def _prepare_output_files(
     *,
     output_path: Path,
     failed_log_path: Path,
+    quepid_output_path: Path | None,
     resume: bool,
     force: bool,
 ) -> None:
     """Prepare output locations safely before the run starts."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     failed_log_path.parent.mkdir(parents=True, exist_ok=True)
+    if quepid_output_path is not None:
+        quepid_output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if resume:
         if not output_path.exists():
             raise click.UsageError(f"--resume was set, but {output_path} does not exist.")
         return
 
-    if not output_path.exists():
+    _prepare_single_output_file(path=output_path, force=force)
+    if failed_log_path.exists():
+        failed_log_path.unlink()
+    if quepid_output_path is not None:
+        _prepare_single_output_file(path=quepid_output_path, force=force)
+
+
+def _prepare_single_output_file(*, path: Path, force: bool) -> None:
+    """Prepare one output file path before a non-resume run."""
+    if not path.exists():
         return
 
     if not force:
         confirmed = click.confirm(
-            f"Output file {output_path} already exists. Overwrite it?",
+            f"Output file {path} already exists. Overwrite it?",
             default=False,
         )
         if not confirmed:
             raise click.Abort()
 
-    output_path.unlink()
-    if failed_log_path.exists():
-        failed_log_path.unlink()
+    path.unlink()
