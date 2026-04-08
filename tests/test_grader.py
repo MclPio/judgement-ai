@@ -43,7 +43,7 @@ def make_grader(
     provider: str = "openai_compatible",
     response_mode: str = "text",
     think: bool | None = None,
-    max_retries: int = 3,
+    max_attempts: int = 3,
     request_timeout: float = 60.0,
     temperature: float = 0.0,
 ) -> Grader:
@@ -65,7 +65,7 @@ def make_grader(
         llm_model="gpt-test",
         passes=passes,
         max_workers=4,
-        max_retries=max_retries,
+        max_attempts=max_attempts,
         request_timeout=request_timeout,
         temperature=temperature,
         provider=provider,
@@ -168,6 +168,11 @@ def test_call_llm_uses_configured_temperature(monkeypatch) -> None:
 def test_grader_rejects_negative_temperature() -> None:
     with pytest.raises(ValueError, match="temperature must be greater than or equal to 0"):
         make_grader(temperature=-0.1)
+
+
+def test_grader_rejects_non_positive_max_attempts() -> None:
+    with pytest.raises(ValueError, match="max_attempts must be at least 1"):
+        make_grader(max_attempts=0)
 
 
 def test_call_llm_uses_openai_json_schema_payload(monkeypatch) -> None:
@@ -295,6 +300,7 @@ def test_grade_retries_failures_logs_failed_items_and_continues(monkeypatch, tmp
             DummyResponse({"choices": [{"message": {"content": "Missing strict output"}}]}),
             DummyResponse({"choices": [{"message": {"content": "Still wrong"}}]}),
             DummyResponse({"choices": [{"message": {"content": "No score here either"}}]}),
+            DummyResponse({"choices": [{"message": {"content": "Wrong again"}}]}),
             DummyResponse({"choices": [{"message": {"content": "Useful result.\nSCORE: 2"}}]}),
         ]
     )
@@ -358,7 +364,7 @@ def test_grade_writes_failures_incrementally(monkeypatch, tmp_path) -> None:
             ]
         }
     )
-    grader = make_grader(fetcher=fetcher, max_retries=1)
+    grader = make_grader(fetcher=fetcher, max_attempts=1)
     grader.grade(
         queries=["vitamin b6"],
         failed_log_path=failed_log_path,
@@ -391,7 +397,7 @@ def test_grade_respects_configured_timeout_and_retry_count(monkeypatch, tmp_path
         llm_api_key="test-key",
         llm_model="gpt-test",
         max_workers=1,
-        max_retries=1,
+        max_attempts=1,
         request_timeout=120.0,
         provider="openai_compatible",
     )

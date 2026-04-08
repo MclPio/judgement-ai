@@ -27,7 +27,7 @@ grading:
   max_workers: 10
   passes: 1
   temperature: 0
-  max_retries: 1
+  max_attempts: 1
   request_timeout: 60
   response_mode: text
   prompt_file: null
@@ -165,11 +165,17 @@ For judgment-list generation, `0` or a very low value is usually the right start
 
 Set this in config with `grading.temperature`, or override it per run with `--temperature`.
 
-### `max_retries`
+### `max_attempts`
 
-Attempts per item before it is recorded as a failure.
+Total attempts per item before it is recorded as a failure.
 
-For exploratory or long local runs, `1` is usually the best choice.
+Examples:
+
+- `1`: try each item once, then write failures for later cleanup
+- `2`: one retry after the first failure
+- `3`: up to three total attempts
+
+For exploratory or long local runs, `1` is usually the best first-pass choice.
 
 ### `request_timeout`
 
@@ -282,7 +288,7 @@ grading:
   max_workers: 4
   passes: 1
   temperature: 0
-  max_retries: 1
+  max_attempts: 1
   request_timeout: 60
   response_mode: json_schema
 ```
@@ -301,7 +307,7 @@ grading:
   max_workers: 1
   passes: 1
   temperature: 0
-  max_retries: 1
+  max_attempts: 1
   request_timeout: 300
   response_mode: json_schema
 ```

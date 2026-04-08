@@ -62,7 +62,11 @@ from judgement_ai.results_io import load_json_results
 @click.option("--passes", type=int, help="Number of grading passes per item.")
 @click.option("--temperature", type=float, help="Sampling temperature for the LLM.")
 @click.option("--request-timeout", type=float, help="Provider request timeout in seconds.")
-@click.option("--max-retries", type=int, help="Attempts per item before logging a failure.")
+@click.option(
+    "--max-attempts",
+    type=int,
+    help="Total attempts per item before logging a failure.",
+)
 @click.option(
     "--provider",
     type=click.Choice(["auto", "ollama", "openai_compatible"]),
@@ -100,7 +104,7 @@ def grade(
     passes: int | None,
     temperature: float | None,
     request_timeout: float | None,
-    max_retries: int | None,
+    max_attempts: int | None,
     provider: str | None,
     response_mode: str | None,
     think: bool | None,
@@ -154,7 +158,7 @@ def grade(
         passes=passes,
         temperature=temperature,
         request_timeout=request_timeout,
-        max_retries=max_retries,
+        max_attempts=max_attempts,
         provider=provider,
         response_mode=response_mode,
         think=think,

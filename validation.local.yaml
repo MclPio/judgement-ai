@@ -9,7 +9,7 @@ grading:
   max_workers: 1
   passes: 1
   temperature: 0
-  max_retries: 1
+  max_attempts: 1
   request_timeout: 300
   response_mode: json_schema
   prompt_profile: amazon_esci

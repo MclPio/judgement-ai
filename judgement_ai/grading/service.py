@@ -53,7 +53,7 @@ class Grader:
         max_workers: int = 10,
         passes: int = 1,
         prompt_template: str | None = None,
-        max_retries: int = 3,
+        max_attempts: int = 1,
         request_timeout: float = 60.0,
         temperature: float = 0.0,
         provider: str = "auto",
@@ -70,7 +70,7 @@ class Grader:
         self.scale_labels = scale_labels or DEFAULT_SCALE_LABELS.copy()
         self.max_workers = max_workers
         self.passes = passes
-        self.max_retries = max_retries
+        self.max_attempts = max_attempts
         self.request_timeout = request_timeout
         self.temperature = temperature
         self.provider = provider
@@ -85,8 +85,8 @@ class Grader:
         )
         if self.passes < 1:
             raise ValueError("passes must be at least 1.")
-        if self.max_retries < 1:
-            raise ValueError("max_retries must be at least 1.")
+        if self.max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1.")
         if self.temperature < 0:
             raise ValueError("temperature must be greater than or equal to 0.")
         if self.provider not in {"auto", "ollama", "openai_compatible"}:
@@ -290,8 +290,7 @@ class Grader:
         last_error: Exception | None = None
         last_raw_response: str | None = None
         failure_type = "unknown_error"
-
-        for _ in range(self.max_retries):
+        for _ in range(self.max_attempts):
             try:
                 pass_results = self._run_passes(query=query, item=item)
                 final_score = self._select_final_score([score for score, _ in pass_results])
@@ -323,7 +322,7 @@ class Grader:
             rank=item.rank,
             failure_type=failure_type,
             error=str(last_error) if last_error else "Unknown grading failure.",
-            attempts=self.max_retries,
+            attempts=self.max_attempts,
             raw_response=last_raw_response,
         )
 

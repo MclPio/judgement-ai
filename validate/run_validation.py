@@ -52,9 +52,9 @@ def main() -> None:
         help="Provider request timeout in seconds.",
     )
     parser.add_argument(
-        "--max-retries",
+        "--max-attempts",
         type=int,
-        help="Attempts per item during this run. Use 1 for a mostly single-pass run.",
+        help="Total attempts per item during this run. Use 1 for a mostly single-pass run.",
     )
     parser.add_argument(
         "--response-mode",
@@ -130,9 +130,9 @@ def main() -> None:
         temperature=args.temperature
         if args.temperature is not None
         else _float_or_default(grading_config.get("temperature"), 0.0),
-        max_retries=args.max_retries
-        if args.max_retries is not None
-        else _int_or_default(grading_config.get("max_retries"), 1),
+        max_attempts=args.max_attempts
+        if args.max_attempts is not None
+        else _int_or_default(grading_config.get("max_attempts"), 1),
         request_timeout=args.request_timeout
         if args.request_timeout is not None
         else _float_or_default(grading_config.get("request_timeout"), 60.0),

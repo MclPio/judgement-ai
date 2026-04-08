@@ -435,7 +435,7 @@ def run_validation_benchmark(
             "passes": grader.passes,
             "workers": grader.max_workers,
             "request_timeout": grader.request_timeout,
-            "max_retries": grader.max_retries,
+            "max_attempts": grader.max_attempts,
             "resume": resume,
             "retry_failures_from": str(retry_failures_from) if retry_failures_from else None,
             "metrics": metrics,

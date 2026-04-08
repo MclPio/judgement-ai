@@ -158,7 +158,7 @@ def build_grader(
     passes: int | None,
     temperature: float | None,
     request_timeout: float | None,
-    max_retries: int | None,
+    max_attempts: int | None,
     provider: str | None,
     response_mode: str | None,
     think: bool | None,
@@ -190,10 +190,7 @@ def build_grader(
         if temperature is not None
         else config_float(grading_config, "temperature")
         or 0.0,
-        max_retries=max_retries
-        if max_retries is not None
-        else config_int(grading_config, "max_retries")
-        or 3,
+        max_attempts=max_attempts or config_int(grading_config, "max_attempts") or 1,
         request_timeout=request_timeout
         if request_timeout is not None
         else config_float(grading_config, "request_timeout")

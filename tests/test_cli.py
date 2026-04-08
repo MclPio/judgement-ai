@@ -236,13 +236,72 @@ def test_grade_command_accepts_timeout_and_retry_options(monkeypatch, tmp_path) 
             str(output_path),
             "--request-timeout",
             "120",
-            "--max-retries",
+            "--max-attempts",
             "1",
         ],
     )
 
     assert result.exit_code == 0
     assert captured["timeout"] == 120.0
+
+
+def test_grade_command_uses_max_attempts_from_config(monkeypatch, tmp_path) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+
+    results_file = tmp_path / "results.json"
+    results_file.write_text(
+        json.dumps(
+            {
+                "vitamin b6": [
+                    {"doc_id": "123", "rank": 1, "fields": {"title": "Vitamin B6 100mg"}}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "judgments.json"
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  api_key: test-key",
+                "  model: gpt-test",
+                "search:",
+                f"  results_file: {results_file}",
+                "grading:",
+                "  max_attempts: 1",
+                "output:",
+                f"  path: {output_path}",
+                f"queries: {queries_path}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    calls = {"count": 0}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+        calls["count"] += 1
+
+        class DummyResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"choices": [{"message": {"content": "Missing score"}}]}
+
+        return DummyResponse()
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["grade", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert calls["count"] == 1
 
 
 def test_grade_command_accepts_temperature_option(monkeypatch, tmp_path) -> None:

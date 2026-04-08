@@ -101,7 +101,7 @@ grader = Grader(
     llm_model="gpt-5.1",
     temperature=0,
     response_mode="json_schema",
-    max_retries=1,
+    max_attempts=1,
 )
 
 results = grader.grade(
@@ -281,6 +281,7 @@ Long runs are meant to be recoverable.
 - successful results are written incrementally
 - failed items are written to a sidecar `*-failures.json`
 - `--resume` skips already completed `(query, doc_id)` pairs from the canonical raw JSON artifact
+- `--max-attempts 1` means one attempt now, then rely on the failure log or a later rerun if needed
 
 Example:
 

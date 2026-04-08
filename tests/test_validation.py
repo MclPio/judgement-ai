@@ -109,7 +109,7 @@ def test_run_validation_benchmark_writes_completed_summary(monkeypatch, tmp_path
     assert (tmp_path / "smoke-raw-judgments.json").exists()
     assert (tmp_path / "smoke-aligned.json").exists()
     assert (tmp_path / "smoke-analysis.json").exists()
-    assert result["summary"]["max_retries"] == 3
+    assert result["summary"]["max_attempts"] == 1
     assert result["summary"]["request_timeout"] == 60.0
     assert result["summary"]["temperature"] == 0.0
 

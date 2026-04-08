@@ -85,7 +85,7 @@ grading:
   max_workers: 1
   passes: 1
   temperature: 0
-  max_retries: 1
+  max_attempts: 1
   request_timeout: 300
   response_mode: json_schema
   prompt_profile: amazon_esci
@@ -104,7 +104,7 @@ grading:
   max_workers: 4
   passes: 1
   temperature: 0
-  max_retries: 1
+  max_attempts: 1
   request_timeout: 180
   response_mode: json_schema
   prompt_profile: amazon_esci
@@ -207,7 +207,7 @@ Poor local calibration no longer blocks the full local benchmark as long as the 
 
 Recommended local-model workflow:
 
-- keep `grading.max_retries: 1`
+- keep `grading.max_attempts: 1`
 - keep `response_mode: json_schema`
 - keep `provider: ollama`
 - keep `llm.think: false`

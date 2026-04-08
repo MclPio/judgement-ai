@@ -18,7 +18,7 @@ grading:
   max_workers: 10
   passes: 1
   temperature: 0
-  max_retries: 1
+  max_attempts: 1
   request_timeout: 60
   response_mode: text
   prompt_file: null
