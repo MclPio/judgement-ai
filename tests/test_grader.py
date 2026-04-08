@@ -189,6 +189,14 @@ def test_call_llm_uses_openai_json_schema_payload(monkeypatch) -> None:
     assert response == {"score": 2, "reasoning": "Clear fit."}
     assert captured["url"] == "https://api.example.com/v1/chat/completions"
     assert captured["json"]["response_format"]["type"] == "json_schema"
+    assert captured["json"]["response_format"]["json_schema"]["schema"]["required"] == [
+        "score",
+        "reasoning",
+    ]
+    assert "notes" not in captured["json"]["response_format"]["json_schema"]["schema"]["properties"]
+    assert (
+        "refusal" not in captured["json"]["response_format"]["json_schema"]["schema"]["properties"]
+    )
 
 
 def test_call_llm_uses_ollama_native_api_for_structured_output(monkeypatch) -> None:

@@ -47,8 +47,11 @@ DEFAULT_OUTPUT_INSTRUCTIONS = {
         "SCORE: <number>"
     ),
     "json_schema": (
-        "Respond with a JSON object matching the required schema.\n"
-        "Use a concise reasoning string and an integer score from the provided scale."
+        "Respond ONLY with a valid JSON object.\n"
+        "Output must use EXACTLY these fields:\n"
+        "- score (integer from the provided scale)\n"
+        "- reasoning (string)\n"
+        'Example output:\n{"score": <integer>, "reasoning": <string>}'
     ),
 }
 

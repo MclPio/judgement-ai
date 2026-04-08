@@ -19,7 +19,7 @@ Treat `text` mode as the most reliable default until structured output proves st
 Keep structured output only if it gives a clear benefit:
 
 - fewer parse failures in practice
-- better consistency than text mode
+- better output-format consistency than text mode
 - acceptable compatibility across target providers
 
 If those checks fail, prefer simplifying the product and dropping or de-emphasizing structured output.
@@ -28,6 +28,12 @@ For Ollama specifically:
 
 - keep support only if it is easy to maintain and materially improves results
 - if it needs provider-specific workarounds that make the core grader harder to trust, it is probably not worth making central to the product
+
+Current project stance:
+
+- `text` is the default and recommended mode
+- `json_schema` remains supported as an optional provider-dependent mode
+- structured output should be treated as an output-reliability feature, not evidence of better grading quality
 
 ## What To Check
 

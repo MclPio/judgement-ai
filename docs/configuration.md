@@ -184,7 +184,12 @@ One of:
 - `text`
 - `json_schema`
 
-Use `json_schema` when the provider route reliably supports structured output.
+`text` is the default and recommended mode for the broadest compatibility.
+
+Use `json_schema` when the provider route reliably supports structured output and you want stricter machine-readable responses.
+
+Structured output is mainly a reliability feature for parsing and validation. Do not assume it improves grading quality by itself.
+
 If you see provider `400` errors on routed services, test `text` mode.
 
 ### `prompt_file`

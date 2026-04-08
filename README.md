@@ -332,7 +332,9 @@ The tool supports:
 Behavior notes:
 
 - `temperature` defaults to `0`, but is configurable through the library, CLI, and config file
-- `json_schema` mode is supported when the provider and model support structured output
+- `text` is the default and recommended mode for the broadest reliability
+- `json_schema` is supported as an optional mode when the provider and model reliably support structured output
+- structured output is mainly about output-format reliability, not inherently better grading quality
 - some routed providers may require `text` mode even when the underlying model supports structured output elsewhere
 
 For CLI runs, use `--temperature`. For config-driven runs, set `grading.temperature`.

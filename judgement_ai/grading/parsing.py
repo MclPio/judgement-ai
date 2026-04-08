@@ -118,8 +118,6 @@ def build_json_schema(*, scale_min: int, scale_max: int) -> dict[str, Any]:
                 "maximum": scale_max,
             },
             "reasoning": {"type": "string"},
-            "notes": {"type": "string"},
-            "refusal": {"type": "string"},
         },
         "required": ["score", "reasoning"],
         "additionalProperties": False,

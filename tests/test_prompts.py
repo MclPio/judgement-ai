@@ -80,7 +80,6 @@ def test_build_prompt_uses_json_schema_output_instructions() -> None:
         response_mode="json_schema",
     )
 
-    assert "Respond with a JSON object" in prompt
     assert "SCORE: <number>" not in prompt
 
 
