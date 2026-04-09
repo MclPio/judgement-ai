@@ -80,11 +80,12 @@ Implication for this repo:
 These are the implementation decisions we are adopting now:
 
 1. Default scale is `0-3` with textual labels.
-2. Prompt must contain `{query}`, `{result_fields}`, and `{scale_labels}`.
-3. `{domain_context}` is optional but supported by the default prompt.
-4. The default prompt asks for brief reasoning followed by a strict `SCORE: <number>` line.
+2. The default structured prompt uses `{query}`, `{result_fields}`, and `{scale_labels}`.
+3. `{domain_context}` and output instructions are supported in the default structured prompt.
+4. The default text prompt asks for brief reasoning followed by a strict `SCORE: <number>` line.
 5. Prompt rendering is deterministic so tests can lock behavior down.
 6. Custom scales must provide labels for every score in the configured range.
+7. Full custom prompt-file mode is supported, but it is intentionally self-contained and only injects `{query}` and `{result_fields}`.
 
 ## Notes On Evidence Strength
 

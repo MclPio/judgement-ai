@@ -9,6 +9,31 @@ import requests
 from judgement_ai.grading.parsing import build_json_schema, decode_json_message
 from judgement_ai.grading.types import ProviderError
 
+OPENAI_COMPATIBLE_RESERVED_KEYS = {
+    "api_key",
+    "base_url",
+    "messages",
+    "model",
+    "request_timeout",
+    "response_format",
+    "response_mode",
+    "temperature",
+    "think",
+}
+OLLAMA_RESERVED_ROOT_KEYS = {
+    "api_key",
+    "base_url",
+    "format",
+    "messages",
+    "model",
+    "request_timeout",
+    "response_mode",
+    "stream",
+    "temperature",
+    "think",
+}
+OLLAMA_RESERVED_OPTIONS_KEYS = {"temperature"}
+
 
 def resolve_provider(*, llm_base_url: str, provider: str) -> str:
     """Resolve the concrete provider implementation."""
@@ -32,6 +57,8 @@ def call_llm(
     prompt: str,
     scale_min: int,
     scale_max: int,
+    openai_compatible_options: dict[str, Any] | None = None,
+    ollama_options: dict[str, Any] | None = None,
 ) -> str | dict[str, Any]:
     """Call the configured LLM provider and return the message content."""
     resolved = resolve_provider(llm_base_url=llm_base_url, provider=provider)
@@ -46,6 +73,7 @@ def call_llm(
             prompt=prompt,
             scale_min=scale_min,
             scale_max=scale_max,
+            ollama_options=ollama_options,
         )
     return call_openai_compatible(
         llm_base_url=llm_base_url,
@@ -57,6 +85,7 @@ def call_llm(
         prompt=prompt,
         scale_min=scale_min,
         scale_max=scale_max,
+        openai_compatible_options=openai_compatible_options,
     )
 
 
@@ -71,6 +100,7 @@ def call_openai_compatible(
     prompt: str,
     scale_min: int,
     scale_max: int,
+    openai_compatible_options: dict[str, Any] | None = None,
 ) -> str | dict[str, Any]:
     """Call an OpenAI-compatible chat completions endpoint."""
     headers = {"Content-Type": "application/json"}
@@ -91,6 +121,10 @@ def call_openai_compatible(
                 "schema": build_json_schema(scale_min=scale_min, scale_max=scale_max),
             },
         }
+    merge_openai_compatible_options(
+        payload=payload,
+        extra_options=openai_compatible_options,
+    )
 
     try:
         response = requests.post(
@@ -125,6 +159,7 @@ def call_ollama(
     prompt: str,
     scale_min: int,
     scale_max: int,
+    ollama_options: dict[str, Any] | None = None,
 ) -> str | dict[str, Any]:
     """Call Ollama's native chat API for think control and structured outputs."""
     payload: dict[str, Any] = {
@@ -137,6 +172,10 @@ def call_ollama(
         payload["think"] = think
     if response_mode == "json_schema":
         payload["format"] = build_json_schema(scale_min=scale_min, scale_max=scale_max)
+    merge_ollama_options(
+        payload=payload,
+        extra_options=ollama_options,
+    )
 
     try:
         response = requests.post(
@@ -239,3 +278,59 @@ def ollama_api_root(llm_base_url: str) -> str:
     if llm_base_url.endswith("/v1"):
         return llm_base_url[: -len("/v1")]
     return llm_base_url.rstrip("/")
+
+
+def merge_openai_compatible_options(
+    *,
+    payload: dict[str, Any],
+    extra_options: dict[str, Any] | None,
+) -> None:
+    """Merge advanced OpenAI-compatible payload options safely."""
+    options = validate_provider_options(
+        extra_options,
+        label="llm.openai_compatible",
+        reserved_keys=OPENAI_COMPATIBLE_RESERVED_KEYS,
+    )
+    payload.update(options)
+
+
+def merge_ollama_options(
+    *,
+    payload: dict[str, Any],
+    extra_options: dict[str, Any] | None,
+) -> None:
+    """Merge advanced Ollama payload options safely."""
+    options = validate_provider_options(
+        extra_options,
+        label="llm.ollama",
+        reserved_keys=OLLAMA_RESERVED_ROOT_KEYS,
+    )
+    nested_options = options.pop("options", None)
+    if nested_options is not None:
+        nested_mapping = validate_provider_options(
+            nested_options,
+            label="llm.ollama.options",
+            reserved_keys=OLLAMA_RESERVED_OPTIONS_KEYS,
+        )
+        payload["options"].update(nested_mapping)
+    payload.update(options)
+
+
+def validate_provider_options(
+    value: dict[str, Any] | None,
+    *,
+    label: str,
+    reserved_keys: set[str],
+) -> dict[str, Any]:
+    """Validate an advanced provider passthrough mapping."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a mapping.")
+    duplicate_keys = sorted(key for key in value if key in reserved_keys)
+    if duplicate_keys:
+        duplicate_list = ", ".join(duplicate_keys)
+        raise ValueError(
+            f"{label} cannot override curated settings: {duplicate_list}."
+        )
+    return dict(value)

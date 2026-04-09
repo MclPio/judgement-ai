@@ -28,6 +28,10 @@ from judgement_ai.models import GradeResult
 from judgement_ai.output import JsonResultsWriter, ResultsWriter
 from judgement_ai.prompts import (
     DEFAULT_SCALE_LABELS,
+    PROMPT_FILE_ALLOWED_FIELDS,
+    PROMPT_FILE_REQUIRED_FIELDS,
+    STRUCTURED_OPTIONAL_PROMPT_FIELDS,
+    STRUCTURED_REQUIRED_PROMPT_FIELDS,
     build_prompt,
     load_prompt_template,
     validate_prompt_template,
@@ -53,12 +57,17 @@ class Grader:
         max_workers: int = 10,
         passes: int = 1,
         prompt_template: str | None = None,
+        prompt_contract: str = "structured",
+        prompt_instructions: str | None = None,
+        output_instructions: str | None = None,
         max_attempts: int = 1,
         request_timeout: float = 60.0,
         temperature: float = 0.0,
         provider: str = "auto",
         response_mode: str = "text",
         think: bool | None = None,
+        openai_compatible_options: dict[str, Any] | None = None,
+        ollama_options: dict[str, Any] | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.llm_base_url = llm_base_url.rstrip("/")
@@ -70,19 +79,39 @@ class Grader:
         self.scale_labels = scale_labels or DEFAULT_SCALE_LABELS.copy()
         self.max_workers = max_workers
         self.passes = passes
+        self.prompt_contract = prompt_contract
+        self.prompt_instructions = prompt_instructions
+        self.output_instructions = output_instructions
         self.max_attempts = max_attempts
         self.request_timeout = request_timeout
         self.temperature = temperature
         self.provider = provider
         self.response_mode = response_mode
         self.think = think
+        self.openai_compatible_options = dict(openai_compatible_options or {})
+        self.ollama_options = dict(ollama_options or {})
         self.prompt_template = load_prompt_template(prompt_template)
-        validate_prompt_template(self.prompt_template)
-        validate_scale_labels(
-            scale_min=self.scale_min,
-            scale_max=self.scale_max,
-            scale_labels=self.scale_labels,
-        )
+        if self.prompt_contract == "structured":
+            validate_prompt_template(
+                self.prompt_template,
+                required_fields=STRUCTURED_REQUIRED_PROMPT_FIELDS,
+                allowed_fields=(
+                    STRUCTURED_REQUIRED_PROMPT_FIELDS | STRUCTURED_OPTIONAL_PROMPT_FIELDS
+                ),
+            )
+            validate_scale_labels(
+                scale_min=self.scale_min,
+                scale_max=self.scale_max,
+                scale_labels=self.scale_labels,
+            )
+        elif self.prompt_contract == "prompt_file":
+            validate_prompt_template(
+                self.prompt_template,
+                required_fields=PROMPT_FILE_REQUIRED_FIELDS,
+                allowed_fields=PROMPT_FILE_ALLOWED_FIELDS,
+            )
+        else:
+            raise ValueError("prompt_contract must be 'structured' or 'prompt_file'.")
         if self.passes < 1:
             raise ValueError("passes must be at least 1.")
         if self.max_attempts < 1:
@@ -334,7 +363,10 @@ class Grader:
             scale_labels=self.scale_labels,
             domain_context=self.domain_context,
             prompt_template=self.prompt_template,
+            prompt_instructions=self.prompt_instructions,
+            output_instructions=self.output_instructions,
             response_mode=self.response_mode,
+            prompt_contract=self.prompt_contract,
         )
         return [self._grade_once(prompt=prompt) for _ in range(self.passes)]
 
@@ -364,6 +396,8 @@ class Grader:
             prompt=prompt,
             scale_min=self.scale_min,
             scale_max=self.scale_max,
+            openai_compatible_options=self.openai_compatible_options,
+            ollama_options=self.ollama_options,
         )
 
     def parse_response(

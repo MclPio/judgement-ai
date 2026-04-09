@@ -2,7 +2,7 @@
 
 This guide covers the main runtime configuration for `judgement-ai`.
 
-If you just want to get started, copy [judgement-ai.yaml.example](../judgement-ai.yaml.example) and adjust the values.
+Copy [judgement-ai.yaml.example](../judgement-ai.yaml.example) and trim it down to the parts you need.
 
 ## File Layout
 
@@ -11,6 +11,16 @@ llm:
   base_url: https://api.openai.com/v1
   api_key: ${OPENAI_API_KEY}
   model: gpt-5.1
+  # provider: openai_compatible
+  # think: false
+  # openai_compatible:
+  #   top_p: 0.9
+  #   provider:
+  #     require_parameters: true
+  # ollama:
+  #   keep_alive: "15m"
+  #   options:
+  #     top_k: 20
 
 search:
   results_file: results.json
@@ -30,6 +40,11 @@ grading:
   max_attempts: 1
   request_timeout: 60
   response_mode: text
+  prompt:
+    # instructions: |
+    #   You are grading supplement search results.
+    # output_instructions: |
+    #   First explain your reasoning briefly, then output SCORE: <number>
   prompt_file: null
 
 output:
@@ -40,6 +55,64 @@ queries: queries.txt
 ```
 
 Environment variables like `${OPENAI_API_KEY}` are expanded automatically.
+
+## Prompt Modes
+
+`judgement-ai` supports two prompt modes.
+
+### 1. Structured Prompt Config
+
+This is the default and recommended mode.
+
+You keep the repo's prompt shape, scale rendering, and parser behavior, but override the main instruction blocks:
+
+```yaml
+grading:
+  scale_labels:
+    0: "Completely irrelevant"
+    1: "Related but not relevant"
+    2: "Relevant"
+    3: "Perfectly relevant"
+  domain_context: "Nutritional supplements catalog"
+  prompt:
+    instructions: |
+      You are grading supplement search results for an internal relevance audit.
+    output_instructions: |
+      First explain your reasoning briefly, then output SCORE: <number>
+```
+
+Supported structured prompt keys:
+
+- `grading.prompt.instructions`
+- `grading.prompt.output_instructions`
+
+In this mode, these still participate:
+
+- `grading.scale_min`
+- `grading.scale_max`
+- `grading.scale_labels`
+- `grading.domain_context`
+- `grading.response_mode`
+
+### 2. Full Custom Prompt File
+
+This is the full-ownership mode.
+
+```yaml
+grading:
+  prompt_file: examples/custom_prompt_template.txt
+```
+
+In this mode:
+
+- only `{query}` and `{result_fields}` are supported placeholders
+- `grading.scale_min`, `grading.scale_max`, `grading.scale_labels`, and `grading.domain_context` must not be set
+- `grading.prompt.*` must not be set
+- `--domain` must not be used alongside `--prompt-file`
+
+The repo includes [examples/custom_prompt_template.txt](../examples/custom_prompt_template.txt) as a starting point.
+
+Once you choose `prompt_file`, you own the prompt semantics. The library still handles runtime injection of the query and result fields, but it does not mix in scale labels, domain context, or output instructions.
 
 ## `llm`
 
@@ -66,7 +139,7 @@ Model identifier understood by the configured provider.
 Examples:
 
 - `gpt-5.1`
-- `openai/gpt-5.4`
+- `openai/gpt-5.4-mini`
 - `qwen3.5:9b`
 
 ### `provider`
@@ -79,11 +152,63 @@ Optional. One of:
 
 If omitted, the tool infers the provider from the base URL where possible.
 
+Set this explicitly when you want provider-specific advanced config blocks to apply.
+
 ### `think`
 
 Optional Ollama-only control.
 
 - `false` is a good default for local grading when thinking-heavy models are too slow
+
+### `openai_compatible`
+
+Optional advanced passthrough block for provider-specific chat payload fields.
+
+Example:
+
+```yaml
+llm:
+  provider: openai_compatible
+  openai_compatible:
+    top_p: 0.9
+    max_completion_tokens: 200
+    seed: 1
+    provider:
+      require_parameters: true
+```
+
+Notes:
+
+- this block is config-only in M4, not a CLI flag surface
+- it applies only when `llm.provider: openai_compatible`
+- it is merged into the outgoing chat payload after the curated fields are built
+- it must not override curated settings such as `model`, `temperature`, or `response_format`
+
+### `ollama`
+
+Optional advanced passthrough block for Ollama-native chat fields.
+
+Example:
+
+```yaml
+llm:
+  provider: ollama
+  ollama:
+    keep_alive: "15m"
+    options:
+      top_k: 20
+      top_p: 0.9
+      seed: 1
+```
+
+Notes:
+
+- this block is config-only in M4, not a CLI flag surface
+- it applies only when `llm.provider: ollama`
+- root-level Ollama fields like `keep_alive` are supported
+- nested `ollama.options` is merged into the request `options`
+- use `llm.think`, not `llm.ollama.think`
+- `ollama.options.temperature` is rejected because `grading.temperature` owns that setting
 
 ## `search`
 
@@ -94,27 +219,7 @@ search:
   results_file: results.json
 ```
 
-Library users can also pass the same query-to-results shape directly to
-`InMemoryResultsFetcher(...)`.
-
-Example results payload:
-
-```json
-{
-  "vitamin b6": [
-    {
-      "doc_id": "123",
-      "fields": {
-        "title": "Vitamin B6 100mg",
-        "description": "Supports energy metabolism"
-      }
-    }
-  ]
-}
-```
-
-The query strings you pass must match the top-level keys in the results payload if you want
-results back.
+Library users can also pass the same query-to-results shape directly to `InMemoryResultsFetcher(...)`.
 
 Supported result item fields for v1 are:
 
@@ -123,9 +228,6 @@ Supported result item fields for v1 are:
 - `fields`
 
 Anything you want the model to see should live under `fields`.
-Other top-level attributes are ignored by the fetcher.
-If `rank` is omitted, the fetcher assigns one based on the result's position in the list,
-starting at `1`.
 
 ## `grading`
 
@@ -135,11 +237,15 @@ Default scale is `0-3`.
 
 If you customize the scale, provide labels for every score in the configured range.
 
+This scale customization is available only in structured prompt mode, not in `prompt_file` mode.
+
 ### `domain_context`
 
-Optional context injected into the prompt.
+Optional context injected into the default structured prompt.
 
 Useful when the search domain is specialized.
+
+This is not allowed in `prompt_file` mode.
 
 ### `max_workers`
 
@@ -161,21 +267,15 @@ Sampling temperature for the model.
 - `0` is the safest default for reproducible grading
 - higher values allow more variation, but can reduce consistency across runs
 
-For judgment-list generation, `0` or a very low value is usually the right starting point.
-
-Set this in config with `grading.temperature`, or override it per run with `--temperature`.
-
 ### `max_attempts`
 
 Total attempts per item before it is recorded as a failure.
 
 Examples:
 
-- `1`: try each item once, then write failures for later cleanup
+- `1`: try each item once, then use the failure log or rerun later
 - `2`: one retry after the first failure
 - `3`: up to three total attempts
-
-For exploratory or long local runs, `1` is usually the best first-pass choice.
 
 ### `request_timeout`
 
@@ -196,24 +296,25 @@ Use `json_schema` when the provider route reliably supports structured output an
 
 Structured output is mainly a reliability feature for parsing and validation. Do not assume it improves grading quality by itself.
 
-If you see provider `400` errors on routed services, test `text` mode.
+### `prompt`
+
+Optional structured prompt overrides:
+
+- `instructions`
+- `output_instructions`
+
+These work only in structured prompt mode.
 
 ### `prompt_file`
 
-Optional path to a custom prompt template.
+Optional path to a full custom prompt file.
 
-Required placeholders:
+Supported placeholders in this mode:
 
 - `{query}`
 - `{result_fields}`
-- `{scale_labels}`
 
-Optional placeholders:
-
-- `{domain_context}`
-- `{output_instructions}`
-
-This is the main prompt override hook for the core tool.
+No other placeholders are supported in `prompt_file` mode.
 
 ## `output`
 
@@ -227,13 +328,6 @@ The CLI also writes a sidecar failure log next to it:
 
 - `judgments.json`
 - `judgments-failures.json`
-
-Resume and retry logic use this canonical raw JSON artifact.
-
-If `output.path` is omitted entirely, the CLI falls back to a safe local default:
-
-- `judgments.json` when that path does not exist
-- `judgments-YYYYMMDD-HHMMSS.json` when `judgments.json` already exists
 
 ### `csv_path`
 
@@ -256,7 +350,7 @@ Supported formats:
 
 ## CLI Overrides
 
-CLI flags override config-file values.
+CLI flags override config-file values for the curated runtime surface.
 
 Typical pattern:
 
@@ -267,12 +361,7 @@ judgement-ai grade \
   --output judgments.json
 ```
 
-If your config already provides the canonical output path and optional `csv_path`, a full run can
-be as simple as:
-
-```bash
-judgement-ai grade --config judgement-ai.yaml
-```
+Advanced provider passthrough stays in YAML config rather than expanding into many CLI flags.
 
 ## Recommended Starting Points
 
@@ -283,6 +372,7 @@ llm:
   base_url: https://api.openai.com/v1
   api_key: ${OPENAI_API_KEY}
   model: gpt-5.1
+  provider: openai_compatible
 
 grading:
   max_workers: 4
@@ -290,7 +380,7 @@ grading:
   temperature: 0
   max_attempts: 1
   request_timeout: 60
-  response_mode: json_schema
+  response_mode: text
 ```
 
 ### Local Ollama
@@ -302,6 +392,8 @@ llm:
   model: qwen3.5:9b
   provider: ollama
   think: false
+  ollama:
+    keep_alive: "15m"
 
 grading:
   max_workers: 1
@@ -309,5 +401,5 @@ grading:
   temperature: 0
   max_attempts: 1
   request_timeout: 300
-  response_mode: json_schema
+  response_mode: text
 ```

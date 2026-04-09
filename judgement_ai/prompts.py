@@ -7,8 +7,14 @@ from pathlib import Path
 from string import Formatter
 from typing import Any
 
-REQUIRED_PROMPT_FIELDS = {"query", "result_fields", "scale_labels"}
-OPTIONAL_PROMPT_FIELDS = {"domain_context", "output_instructions"}
+STRUCTURED_REQUIRED_PROMPT_FIELDS = {"query", "result_fields", "scale_labels"}
+STRUCTURED_OPTIONAL_PROMPT_FIELDS = {
+    "domain_context",
+    "instructions",
+    "output_instructions",
+}
+PROMPT_FILE_REQUIRED_FIELDS = {"query", "result_fields"}
+PROMPT_FILE_ALLOWED_FIELDS = {"query", "result_fields"}
 
 DEFAULT_SCALE_LABELS = {
     0: "Completely irrelevant - the result has no connection to the query.",
@@ -23,9 +29,13 @@ DEFAULT_SCALE_LABELS = {
     ),
 }
 
-DEFAULT_PROMPT_TEMPLATE = """You are a search relevance expert.
+DEFAULT_INSTRUCTIONS = (
+    "You are a search relevance expert.\n"
+    "Your task is to grade how relevant the following search result is to the query."
+)
+
+DEFAULT_PROMPT_TEMPLATE = """{instructions}
 {domain_context}
-Your task is to grade how relevant the following search result is to the query.
 
 Use this scale:
 {scale_labels}
@@ -68,20 +78,39 @@ def load_prompt_template(path: str | Path | None = None) -> str:
     return raw_value
 
 
-def validate_prompt_template(template: str) -> None:
-    """Ensure required placeholders exist before grading begins."""
-    placeholders = {
+def extract_prompt_placeholders(template: str) -> set[str]:
+    """Return the placeholder names used in a prompt template."""
+    return {
         field_name
         for _, field_name, _, _ in Formatter().parse(template)
         if field_name is not None
     }
-    missing = REQUIRED_PROMPT_FIELDS - placeholders
+
+
+def validate_prompt_template(
+    template: str,
+    *,
+    required_fields: set[str] | None = None,
+    allowed_fields: set[str] | None = None,
+) -> None:
+    """Ensure required placeholders exist before grading begins."""
+    placeholders = extract_prompt_placeholders(template)
+    required = required_fields or STRUCTURED_REQUIRED_PROMPT_FIELDS
+    missing = required - placeholders
     if missing:
         msg = (
             "Prompt template is missing required placeholders: "
             f"{', '.join(sorted(missing))}"
         )
         raise ValueError(msg)
+    if allowed_fields is not None:
+        unexpected = placeholders - allowed_fields
+        if unexpected:
+            msg = (
+                "Prompt template uses unsupported placeholders: "
+                f"{', '.join(sorted(unexpected))}"
+            )
+            raise ValueError(msg)
 
 
 def validate_scale_labels(
@@ -151,21 +180,42 @@ def build_prompt(
     scale_labels: dict[int, str] | None = None,
     domain_context: str | None = None,
     prompt_template: str | None = None,
+    prompt_instructions: str | None = None,
+    output_instructions: str | None = None,
     response_mode: str = "text",
+    prompt_contract: str = "structured",
 ) -> str:
     """Build a fully formatted grading prompt."""
     labels = scale_labels or DEFAULT_SCALE_LABELS
     template = prompt_template or DEFAULT_PROMPT_TEMPLATE
-    validate_prompt_template(template)
-    validate_scale_labels(
-        scale_min=min(labels),
-        scale_max=max(labels),
-        scale_labels=labels,
-    )
+    if prompt_contract == "structured":
+        validate_prompt_template(
+            template,
+            required_fields=STRUCTURED_REQUIRED_PROMPT_FIELDS,
+            allowed_fields=(
+                STRUCTURED_REQUIRED_PROMPT_FIELDS | STRUCTURED_OPTIONAL_PROMPT_FIELDS
+            ),
+        )
+        validate_scale_labels(
+            scale_min=min(labels),
+            scale_max=max(labels),
+            scale_labels=labels,
+        )
+    elif prompt_contract == "prompt_file":
+        validate_prompt_template(
+            template,
+            required_fields=PROMPT_FILE_REQUIRED_FIELDS,
+            allowed_fields=PROMPT_FILE_ALLOWED_FIELDS,
+        )
+    else:
+        raise ValueError(f"Unsupported prompt_contract: {prompt_contract!r}")
     return template.format(
         query=query.strip(),
         result_fields=render_result_fields(result_fields),
         scale_labels=render_scale_labels(labels),
         domain_context=render_domain_context(domain_context),
-        output_instructions=render_output_instructions(response_mode),
+        instructions=(prompt_instructions or DEFAULT_INSTRUCTIONS).strip(),
+        output_instructions=(
+            output_instructions or render_output_instructions(response_mode)
+        ).strip(),
     ).strip()

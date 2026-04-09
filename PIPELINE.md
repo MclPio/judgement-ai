@@ -41,51 +41,6 @@ If a milestone changes public behavior, update docs in the same pass.
 
 ## Active Milestones
 
-### M2. Structured Output Reliability Decision
-
-Plan:
-
-- verify whether `json_schema` mode is reliable enough for OpenAI-compatible APIs to keep as a first-class path
-- compare current repo behavior with manual provider checks outside the codebase before changing implementation
-- decide among:
-  - keep both `text` and `json_schema`
-  - keep `json_schema` only as optional best-effort behavior
-  - remove `json_schema` from the core product path
-- decide separately whether Ollama structured output is worth keeping or is unnecessary complexity
-
-Code focus:
-
-- `judgement_ai/grader.py`
-- `tests/test_grader.py`
-- `docs/structured-output-checks.md`
-- user-facing docs that describe response modes
-
-Test minimum:
-
-- `source .venv/bin/activate`
-- `python3 -m pytest tests/test_grader.py tests/test_cli.py`
-- `python3 -m ruff check .`
-
-### M3. Retry And Failure-Recovery Semantics
-
-Plan:
-
-- verify whether `max_retries=0` should be supported
-- keep recovery behavior easy to understand for users who prefer single-pass runs plus later failure retries
-- clarify the relationship between retries, failure logs, resume, and any retry-failures workflow
-
-Code focus:
-
-- `judgement_ai/grader.py`
-- `judgement_ai/cli.py`
-- `judgement_ai/validation.py`
-- tests and docs covering failure recovery
-
-Test minimum:
-
-- `source .venv/bin/activate`
-- `python3 -m pytest tests/test_grader.py tests/test_cli.py tests/test_resume.py tests/test_validation.py`
-
 ### M4. Prompt And Configuration Usability
 
 Plan:
@@ -94,7 +49,7 @@ Plan:
 - document exactly what can be customized and what template variables are required
 - confirm whether the current config surface already covers the important prompt controls cleanly
 
-Code focus:
+Code focus (using old file locations, be careful):
 
 - `judgement_ai/prompts.py`
 - `judgement_ai/config.py`
@@ -105,8 +60,8 @@ Code focus:
 Test minimum:
 
 - `source .venv/bin/activate`
-- `python3 -m pytest tests/test_prompts.py tests/test_config.py tests/test_cli.py`
-
+- `ruff check`
+- `python3 -m pytest`
 
 ### M6. Validation Scope Simplification
 
@@ -159,6 +114,54 @@ Code focus:
 Test minimum:
 
 - no code tests required unless packaging metadata changes
+
+### M9. Preview Command
+
+Plan:
+
+- add a dedicated `judgement-ai preview` command so users can inspect the resolved prompt and request shape before grading
+- keep v1 intentionally simple and always available by using built-in placeholder data instead of loading real query/result files
+- help users verify prompt mode, provider resolution, response mode, and advanced config effects without spending provider time or debugging a live run
+
+Behavior agreed for v1:
+
+- command name is `judgement-ai preview`
+- use placeholder input by default, not the first real query/result
+- placeholder query should be a simple example string
+- placeholder result should include `title` and `description`, not URL
+- preview should work even if `queries` and `search.results_file` are not configured
+- print:
+  - prompt mode
+  - resolved provider
+  - response mode
+  - rendered prompt
+  - request payload shape
+- redact any sensitive values if they appear in preview output
+- do not make any provider network calls
+
+Code focus:
+
+- `judgement_ai/cli/main.py`
+- `judgement_ai/cli/common.py`
+- `judgement_ai/cli/commands/preview.py`
+- `judgement_ai/prompts.py`
+- `judgement_ai/grading/providers.py`
+- `README.md`
+- `docs/configuration.md`
+
+Implementation notes:
+
+- reuse the same config-loading and override resolution path as `grade` where practical
+- build the prompt exactly the same way the grader would, but with placeholder query/result fields
+- expose the resolved payload as a preview artifact without sending it
+- keep this read-only and side-effect free
+- do not add a real-data preview mode in v1
+
+Test minimum:
+
+- `source .venv/bin/activate`
+- `python3 -m pytest tests/test_cli.py tests/test_prompts.py tests/test_grader.py`
+- `python3 -m ruff check .`
 
 ## Default Execution Order
 

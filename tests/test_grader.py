@@ -165,6 +165,35 @@ def test_call_llm_uses_configured_temperature(monkeypatch) -> None:
     assert captured["json"]["temperature"] == 0.35
 
 
+def test_call_llm_merges_openai_compatible_options(monkeypatch) -> None:
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["json"] = json
+        return DummyResponse(
+            {"choices": [{"message": {"content": "Reasoning.\nSCORE: 2"}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    grader = Grader(
+        fetcher=StaticFetcher({}),
+        llm_base_url="https://api.example.com/v1",
+        llm_api_key="test-key",
+        llm_model="gpt-test",
+        provider="openai_compatible",
+        openai_compatible_options={
+            "top_p": 0.9,
+            "provider": {"require_parameters": True},
+        },
+    )
+    grader._call_llm(prompt="Prompt text")
+
+    assert captured["json"]["top_p"] == 0.9
+    assert captured["json"]["provider"]["require_parameters"] is True
+
+
 def test_grader_rejects_negative_temperature() -> None:
     with pytest.raises(ValueError, match="temperature must be greater than or equal to 0"):
         make_grader(temperature=-0.1)
@@ -234,6 +263,35 @@ def test_call_llm_uses_ollama_native_api_for_structured_output(monkeypatch) -> N
     assert captured["json"]["think"] is False
     assert captured["json"]["options"]["temperature"] == 0.2
     assert captured["json"]["format"]["required"] == ["score", "reasoning"]
+
+
+def test_call_llm_merges_ollama_options(monkeypatch) -> None:
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["json"] = json
+        return DummyResponse(
+            {"message": {"content": "Reasoning.\nSCORE: 2"}}
+        )
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    grader = Grader(
+        fetcher=StaticFetcher({}),
+        llm_base_url="http://localhost:11434/v1",
+        llm_api_key=None,
+        llm_model="qwen3.5:9b",
+        provider="ollama",
+        ollama_options={
+            "keep_alive": "15m",
+            "options": {"top_k": 20},
+        },
+    )
+    grader._call_llm(prompt="Prompt text")
+
+    assert captured["json"]["keep_alive"] == "15m"
+    assert captured["json"]["options"]["top_k"] == 20
 
 
 def test_call_llm_includes_response_body_in_provider_errors(monkeypatch) -> None:
@@ -425,6 +483,46 @@ def test_grade_classifies_timeout_failures(monkeypatch, tmp_path) -> None:
 
     payload = json.loads(failed_log_path.read_text(encoding="utf-8"))
     assert payload[0]["failure_type"] == "timeout"
+
+
+def test_grade_supports_prompt_file_contract(monkeypatch, tmp_path) -> None:
+    captured = {}
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("Query: {query}\nResult:\n{result_fields}", encoding="utf-8")
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["prompt"] = json["messages"][0]["content"]
+        return DummyResponse(
+            {"choices": [{"message": {"content": "Strong match.\nSCORE: 3"}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    grader = Grader(
+        fetcher=StaticFetcher(
+            {
+                "vitamin b6": [
+                    SearchResult(
+                        doc_id="123",
+                        rank=1,
+                        fields={"title": "Vitamin B6 100mg"},
+                    )
+                ]
+            }
+        ),
+        llm_base_url="https://api.example.com/v1",
+        llm_api_key="test-key",
+        llm_model="gpt-test",
+        provider="openai_compatible",
+        prompt_template=str(prompt_file),
+        prompt_contract="prompt_file",
+    )
+    grader.grade(queries=["vitamin b6"], failed_log_path=None)
+
+    assert "Query: vitamin b6" in captured["prompt"]
+    assert "title: Vitamin B6 100mg" in captured["prompt"]
+    assert "Use this scale:" not in captured["prompt"]
 
 
 def test_grade_collects_pass_scores(monkeypatch) -> None:

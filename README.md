@@ -323,6 +323,14 @@ An example config file is included at [judgement-ai.yaml.example](judgement-ai.y
 
 For a fuller configuration reference, see [configuration.md](docs/configuration.md).
 
+The config now supports three clear customization levels:
+
+- curated defaults only
+- structured prompt tuning through `grading.prompt.instructions` and `grading.prompt.output_instructions`
+- full custom prompt ownership through `grading.prompt_file`
+
+If you choose `prompt_file`, it is intentionally not hybrid mode. Only `{query}` and `{result_fields}` are injected at runtime. Scale labels, domain context, and structured prompt overrides are not mixed in.
+
 ## Providers
 
 The tool supports:
@@ -337,10 +345,11 @@ Behavior notes:
 - `json_schema` is supported as an optional mode when the provider and model reliably support structured output
 - structured output is mainly about output-format reliability, not inherently better grading quality
 - some routed providers may require `text` mode even when the underlying model supports structured output elsewhere
+- advanced provider-specific request tuning lives in config under `llm.openai_compatible` and `llm.ollama`
 
 For CLI runs, use `--temperature`. For config-driven runs, set `grading.temperature`.
 
-Prompt and grading tunings such as `prompt_file`, `response_mode`, temperature, retries, and timeouts are documented in [configuration.md](docs/configuration.md).
+Prompt and grading tunings such as prompt mode, `response_mode`, temperature, attempts, timeouts, and provider passthrough are documented in [configuration.md](docs/configuration.md).
 
 ## License
 
@@ -369,8 +378,8 @@ Contributor-facing docs:
 
 ```bash
 pip install -e ".[dev]"
-pytest
-ruff check .
+python3 -m pytest
+python3 -m ruff check .
 ```
 
 ## Status

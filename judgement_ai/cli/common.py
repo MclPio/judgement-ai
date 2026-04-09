@@ -98,6 +98,28 @@ def config_bool(config: dict[str, Any], key: str) -> bool | None:
     return value if isinstance(value, bool) else None
 
 
+def config_mapping(config: dict[str, Any], key: str, *, label: str) -> dict[str, Any] | None:
+    value = config.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise click.UsageError(f"{label} must be a mapping.")
+    return value
+
+
+def has_config_value(config: dict[str, Any], key: str) -> bool:
+    if key not in config:
+        return False
+    value = config.get(key)
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict | list):
+        return bool(value)
+    return True
+
+
 def resolve_output_path(
     *,
     output_path: Path | None,
@@ -169,21 +191,26 @@ def build_grader(
     if not llm_model:
         raise click.UsageError("Provide --model or set llm.model in the config file.")
 
-    scale_min = config_int(grading_config, "scale_min")
-    scale_max = config_int(grading_config, "scale_max")
-    scale_labels = grading_config.get("scale_labels")
+    prompt_settings = resolve_prompt_settings(
+        grading_config=grading_config,
+        domain_context=domain_context,
+        prompt_file=prompt_file,
+    )
+    effective_provider = provider or config_str(llm_config, "provider") or "auto"
+    openai_compatible_options, ollama_options = resolve_provider_options(
+        llm_config=llm_config,
+        effective_provider=effective_provider,
+    )
 
     return Grader(
         fetcher=fetcher,
         llm_base_url=base_url or config_str(llm_config, "base_url") or "https://api.openai.com/v1",
         llm_api_key=api_key if api_key is not None else config_str(llm_config, "api_key"),
         llm_model=llm_model,
-        domain_context=domain_context
-        if domain_context is not None
-        else config_str(grading_config, "domain_context"),
-        scale_min=scale_min if scale_min is not None else 0,
-        scale_max=scale_max if scale_max is not None else 3,
-        scale_labels=scale_labels if isinstance(scale_labels, dict) else None,
+        domain_context=prompt_settings["domain_context"],
+        scale_min=prompt_settings["scale_min"],
+        scale_max=prompt_settings["scale_max"],
+        scale_labels=prompt_settings["scale_labels"],
         max_workers=max_workers or config_int(grading_config, "max_workers") or 10,
         passes=passes or config_int(grading_config, "passes") or 1,
         temperature=temperature
@@ -195,12 +222,15 @@ def build_grader(
         if request_timeout is not None
         else config_float(grading_config, "request_timeout")
         or 60.0,
-        provider=provider or config_str(llm_config, "provider") or "auto",
+        provider=effective_provider,
         response_mode=response_mode or config_str(grading_config, "response_mode") or "text",
         think=think if think is not None else config_bool(llm_config, "think"),
-        prompt_template=str(prompt_file)
-        if prompt_file is not None
-        else config_str(grading_config, "prompt_file"),
+        prompt_template=prompt_settings["prompt_template"],
+        prompt_contract=prompt_settings["prompt_contract"],
+        prompt_instructions=prompt_settings["prompt_instructions"],
+        output_instructions=prompt_settings["output_instructions"],
+        openai_compatible_options=openai_compatible_options,
+        ollama_options=ollama_options,
     )
 
 
@@ -249,3 +279,189 @@ def prepare_single_output_file(*, path: Path, force: bool) -> None:
             raise click.Abort()
 
     path.unlink()
+
+
+def resolve_prompt_settings(
+    *,
+    grading_config: dict[str, Any],
+    domain_context: str | None,
+    prompt_file: Path | None,
+) -> dict[str, Any]:
+    """Resolve prompt-related settings and enforce mode exclusivity."""
+    prompt_config = config_mapping(
+        grading_config,
+        "prompt",
+        label="grading.prompt",
+    ) or {}
+    unexpected_prompt_keys = sorted(
+        key for key in prompt_config if key not in {"instructions", "output_instructions"}
+    )
+    if unexpected_prompt_keys:
+        unexpected_list = ", ".join(unexpected_prompt_keys)
+        raise click.UsageError(
+            f"grading.prompt only supports instructions and output_instructions, got: "
+            f"{unexpected_list}."
+        )
+
+    effective_prompt_file = resolve_prompt_file_path(
+        prompt_file=prompt_file,
+        grading_config=grading_config,
+    )
+    if effective_prompt_file is not None:
+        conflicts = []
+        if domain_context is not None:
+            conflicts.append("--domain")
+        for key in ("scale_min", "scale_max", "scale_labels", "domain_context"):
+            if has_config_value(grading_config, key):
+                conflicts.append(f"grading.{key}")
+        for key in ("instructions", "output_instructions"):
+            if has_config_value(prompt_config, key):
+                conflicts.append(f"grading.prompt.{key}")
+        if conflicts:
+            raise click.UsageError(
+                "Custom prompt-file mode is fully self-contained. Remove these "
+                f"prompt-related settings: {', '.join(conflicts)}."
+            )
+        return {
+            "prompt_template": str(effective_prompt_file),
+            "prompt_contract": "prompt_file",
+            "prompt_instructions": None,
+            "output_instructions": None,
+            "domain_context": None,
+            "scale_min": 0,
+            "scale_max": 3,
+            "scale_labels": None,
+        }
+
+    scale_min = config_int(grading_config, "scale_min")
+    scale_max = config_int(grading_config, "scale_max")
+    scale_labels = grading_config.get("scale_labels")
+    return {
+        "prompt_template": None,
+        "prompt_contract": "structured",
+        "prompt_instructions": config_str(prompt_config, "instructions"),
+        "output_instructions": config_str(prompt_config, "output_instructions"),
+        "domain_context": (
+            domain_context
+            if domain_context is not None
+            else config_str(grading_config, "domain_context")
+        ),
+        "scale_min": scale_min if scale_min is not None else 0,
+        "scale_max": scale_max if scale_max is not None else 3,
+        "scale_labels": scale_labels if isinstance(scale_labels, dict) else None,
+    }
+
+
+def resolve_prompt_file_path(
+    *,
+    prompt_file: Path | None,
+    grading_config: dict[str, Any],
+) -> Path | None:
+    """Resolve the effective custom prompt file path, if configured."""
+    if prompt_file is not None:
+        return prompt_file
+    configured_prompt_file = config_str(grading_config, "prompt_file")
+    if configured_prompt_file is None:
+        return None
+    resolved = Path(configured_prompt_file)
+    if not resolved.exists():
+        raise click.UsageError(
+            "grading.prompt_file must point to an existing file."
+        )
+    return resolved
+
+
+def resolve_provider_options(
+    *,
+    llm_config: dict[str, Any],
+    effective_provider: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve advanced provider passthrough blocks from config."""
+    configured_provider = config_str(llm_config, "provider")
+    openai_compatible_options = (
+        config_mapping(
+            llm_config,
+            "openai_compatible",
+            label="llm.openai_compatible",
+        )
+        if configured_provider == effective_provider == "openai_compatible"
+        else None
+    )
+    ollama_options = (
+        config_mapping(llm_config, "ollama", label="llm.ollama")
+        if configured_provider == effective_provider == "ollama"
+        else None
+    )
+    validate_openai_compatible_options(openai_compatible_options)
+    validate_ollama_options(ollama_options)
+    return openai_compatible_options or {}, ollama_options or {}
+
+
+def validate_openai_compatible_options(
+    options: dict[str, Any] | None,
+) -> None:
+    """Reject advanced OpenAI-compatible config that overlaps curated fields."""
+    if options is None:
+        return
+    duplicate_keys = sorted(
+        key
+        for key in options
+        if key
+        in {
+            "api_key",
+            "base_url",
+            "messages",
+            "model",
+            "request_timeout",
+            "response_format",
+            "response_mode",
+            "temperature",
+            "think",
+        }
+    )
+    if duplicate_keys:
+        raise click.UsageError(
+            "llm.openai_compatible cannot override curated settings: "
+            f"{', '.join(duplicate_keys)}."
+        )
+
+
+def validate_ollama_options(options: dict[str, Any] | None) -> None:
+    """Reject advanced Ollama config that overlaps curated fields."""
+    if options is None:
+        return
+    duplicate_root_keys = sorted(
+        key
+        for key in options
+        if key
+        in {
+            "api_key",
+            "base_url",
+            "format",
+            "messages",
+            "model",
+            "request_timeout",
+            "response_mode",
+            "stream",
+            "temperature",
+            "think",
+        }
+    )
+    if duplicate_root_keys:
+        raise click.UsageError(
+            "llm.ollama cannot override curated settings: "
+            f"{', '.join(duplicate_root_keys)}."
+        )
+    nested_options = options.get("options")
+    if nested_options is None:
+        return
+    if not isinstance(nested_options, dict):
+        raise click.UsageError("llm.ollama.options must be a mapping.")
+    duplicate_option_keys = sorted(
+        key for key in nested_options if key in {"temperature"}
+    )
+    if duplicate_option_keys:
+        raise click.UsageError(
+            "llm.ollama.options cannot override curated settings: "
+            f"{', '.join(duplicate_option_keys)}."
+        )

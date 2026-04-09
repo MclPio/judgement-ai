@@ -362,6 +362,371 @@ def test_grade_command_accepts_temperature_option(monkeypatch, tmp_path) -> None
     assert captured["temperature"] == 0.4
 
 
+def test_grade_command_uses_structured_prompt_config(monkeypatch, tmp_path) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+    results_file = tmp_path / "results.json"
+    results_file.write_text(
+        json.dumps(
+            {
+                "vitamin b6": [
+                    {"doc_id": "123", "rank": 1, "fields": {"title": "Vitamin B6 100mg"}}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "judgments.json"
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  api_key: test-key",
+                "  model: gpt-test",
+                "search:",
+                f"  results_file: {results_file}",
+                "grading:",
+                "  prompt:",
+                "    instructions: |",
+                "      Use the supplement catalog rubric.",
+                "    output_instructions: |",
+                "      Return ONLY a score line.",
+                "output:",
+                f"  path: {output_path}",
+                f"queries: {queries_path}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["prompt"] = json["messages"][0]["content"]
+
+        class DummyResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"choices": [{"message": {"content": "Direct match.\nSCORE: 3"}}]}
+
+        return DummyResponse()
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["grade", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Use the supplement catalog rubric." in captured["prompt"]
+    assert "Return ONLY a score line." in captured["prompt"]
+
+
+def test_grade_command_prompt_file_mode_uses_only_query_and_result_fields(
+    monkeypatch, tmp_path
+) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+    results_file = tmp_path / "results.json"
+    results_file.write_text(
+        json.dumps(
+            {
+                "vitamin b6": [
+                    {"doc_id": "123", "rank": 1, "fields": {"title": "Vitamin B6 100mg"}}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "judgments.json"
+    prompt_file = tmp_path / "custom-prompt.txt"
+    prompt_file.write_text("Query: {query}\nResult:\n{result_fields}", encoding="utf-8")
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  api_key: test-key",
+                "  model: gpt-test",
+                "search:",
+                f"  results_file: {results_file}",
+                "grading:",
+                f"  prompt_file: {prompt_file}",
+                "output:",
+                f"  path: {output_path}",
+                f"queries: {queries_path}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["prompt"] = json["messages"][0]["content"]
+
+        class DummyResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"choices": [{"message": {"content": "Direct match.\nSCORE: 3"}}]}
+
+        return DummyResponse()
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["grade", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert captured["prompt"] == "Query: vitamin b6\nResult:\ntitle: Vitamin B6 100mg"
+
+
+def test_grade_command_prompt_file_mode_rejects_hybrid_prompt_settings(tmp_path) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+    results_file = tmp_path / "results.json"
+    results_file.write_text('{"vitamin b6": []}', encoding="utf-8")
+    output_path = tmp_path / "judgments.json"
+    prompt_file = tmp_path / "custom-prompt.txt"
+    prompt_file.write_text("Query: {query}\nResult:\n{result_fields}", encoding="utf-8")
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  api_key: test-key",
+                "  model: gpt-test",
+                "search:",
+                f"  results_file: {results_file}",
+                "grading:",
+                f"  prompt_file: {prompt_file}",
+                '  domain_context: "supplements"',
+                "  prompt:",
+                "    instructions: |",
+                "      extra instructions",
+                "output:",
+                f"  path: {output_path}",
+                f"queries: {queries_path}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["grade", "--config", str(config_path)])
+
+    assert result.exit_code != 0
+    assert "fully self-contained" in result.output
+
+
+def test_grade_command_merges_openai_compatible_options_from_config(
+    monkeypatch, tmp_path
+) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+    results_file = tmp_path / "results.json"
+    results_file.write_text(
+        '{"vitamin b6": [{"doc_id": "123", "rank": 1, "fields": {"title": "Vitamin B6 100mg"}}]}',
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "judgments.json"
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  base_url: https://api.example.com/v1",
+                "  api_key: test-key",
+                "  model: gpt-test",
+                "  provider: openai_compatible",
+                "  openai_compatible:",
+                "    top_p: 0.9",
+                "    provider:",
+                "      require_parameters: true",
+                "search:",
+                f"  results_file: {results_file}",
+                "output:",
+                f"  path: {output_path}",
+                f"queries: {queries_path}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["json"] = json
+
+        class DummyResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"choices": [{"message": {"content": "Direct match.\nSCORE: 3"}}]}
+
+        return DummyResponse()
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["grade", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert captured["json"]["top_p"] == 0.9
+    assert captured["json"]["provider"]["require_parameters"] is True
+
+
+def test_grade_command_ignores_openai_compatible_options_without_explicit_provider(
+    monkeypatch, tmp_path
+) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+    results_file = tmp_path / "results.json"
+    results_file.write_text(
+        '{"vitamin b6": [{"doc_id": "123", "rank": 1, "fields": {"title": "Vitamin B6 100mg"}}]}',
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "judgments.json"
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  base_url: https://api.example.com/v1",
+                "  api_key: test-key",
+                "  model: gpt-test",
+                "  openai_compatible:",
+                "    top_p: 0.9",
+                "search:",
+                f"  results_file: {results_file}",
+                "output:",
+                f"  path: {output_path}",
+                f"queries: {queries_path}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["json"] = json
+
+        class DummyResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"choices": [{"message": {"content": "Direct match.\nSCORE: 3"}}]}
+
+        return DummyResponse()
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["grade", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "top_p" not in captured["json"]
+
+
+def test_grade_command_merges_ollama_options_from_config(monkeypatch, tmp_path) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+    results_file = tmp_path / "results.json"
+    results_file.write_text(
+        '{"vitamin b6": [{"doc_id": "123", "rank": 1, "fields": {"title": "Vitamin B6 100mg"}}]}',
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "judgments.json"
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  base_url: http://localhost:11434/v1",
+                "  api_key: null",
+                "  model: qwen3.5:9b",
+                "  provider: ollama",
+                "  ollama:",
+                '    keep_alive: "15m"',
+                "    options:",
+                "      top_k: 20",
+                "search:",
+                f"  results_file: {results_file}",
+                "output:",
+                f"  path: {output_path}",
+                f"queries: {queries_path}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del headers, timeout
+        captured["url"] = url
+        captured["json"] = json
+
+        class DummyResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"message": {"content": "Direct match.\nSCORE: 3"}}
+
+        return DummyResponse()
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["grade", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert captured["url"] == "http://localhost:11434/api/chat"
+    assert captured["json"]["keep_alive"] == "15m"
+    assert captured["json"]["options"]["top_k"] == 20
+
+
+def test_grade_command_rejects_duplicate_openai_compatible_settings(tmp_path) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+    results_file = tmp_path / "results.json"
+    results_file.write_text('{"vitamin b6": []}', encoding="utf-8")
+    output_path = tmp_path / "judgments.json"
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  base_url: https://api.example.com/v1",
+                "  api_key: test-key",
+                "  model: gpt-test",
+                "  provider: openai_compatible",
+                "  openai_compatible:",
+                "    temperature: 0.9",
+                "search:",
+                f"  results_file: {results_file}",
+                "output:",
+                f"  path: {output_path}",
+                f"queries: {queries_path}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["grade", "--config", str(config_path)])
+
+    assert result.exit_code != 0
+    assert "cannot override curated settings" in result.output
+
+
 def test_grade_command_uses_safe_default_output_path(monkeypatch, tmp_path) -> None:
     runner = CliRunner()
 
