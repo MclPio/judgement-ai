@@ -41,47 +41,6 @@ If a milestone changes public behavior, update docs in the same pass.
 
 ## Active Milestones
 
-### M4. Prompt And Configuration Usability
-
-Plan:
-
-- make prompt customization easy to discover and safe to use
-- document exactly what can be customized and what template variables are required
-- confirm whether the current config surface already covers the important prompt controls cleanly
-
-Code focus (using old file locations, be careful):
-
-- `judgement_ai/prompts.py`
-- `judgement_ai/config.py`
-- `judgement_ai/cli.py`
-- `docs/configuration.md`
-- `README.md`
-
-Test minimum:
-
-- `source .venv/bin/activate`
-- `ruff check`
-- `python3 -m pytest`
-
-### M6. Validation Scope Simplification
-
-Plan:
-
-- decide whether validation should stay in this repo at all
-- if it stays, keep it simple: prepared inputs in, `judgement_ai` package run, artifacts out
-- remove data acquisition and benchmark-lab complexity if that is no longer the package’s responsibility
-
-Code focus:
-
-- `judgement_ai/validation.py`
-- `validate/`
-- docs mentioning validation
-
-Test minimum:
-
-- `source .venv/bin/activate`
-- `python3 -m pytest tests/test_validation.py tests/test_validation_prep.py tests/test_prepare_benchmarks.py tests/test_run_validation_entrypoint.py`
-
 ### M7. Markdown Rewrite Pass
 
 Plan:
