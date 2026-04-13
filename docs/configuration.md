@@ -105,14 +105,14 @@ grading:
 
 In this mode:
 
-- only `{query}` and `{result_fields}` are supported placeholders
-- `grading.scale_min`, `grading.scale_max`, `grading.scale_labels`, and `grading.domain_context` must not be set
+- only `{query}` and `{result_fields}` are required supported placeholders
+- `grading.scale_min`, `grading.scale_max`, `grading.scale_labels`, and `grading.domain_context` must not be set, everything must be inside the prompt file
 - `grading.prompt.*` must not be set
 - `--domain` must not be used alongside `--prompt-file`
 
 The repo includes [examples/custom_prompt_template.txt](../examples/custom_prompt_template.txt) as a starting point.
 
-Once you choose `prompt_file`, you own the prompt semantics. The library still handles runtime injection of the query and result fields, but it does not mix in scale labels, domain context, or output instructions.
+Once you choose `prompt_file`, you own the prompt semantics. The library still handles runtime injection of the query and result fields, but it does not mix in scale labels, domain context, or output instructions. Be careful of how you describe the output it produces, as judgement-ai grader needs the output to be `SCORE: <integer>` for text parsing and json of a specific shape `{"score": <integer>, "reasoning": <string>}`
 
 ## `llm`
 
@@ -158,7 +158,7 @@ Set this explicitly when you want provider-specific advanced config blocks to ap
 
 Optional Ollama-only control.
 
-- `false` is a good default for local grading when thinking-heavy models are too slow
+- `false` is a good default for local grading when thinking heavy models are too slow
 
 ### `openai_compatible`
 
@@ -179,7 +179,7 @@ llm:
 
 Notes:
 
-- this block is config-only in M4, not a CLI flag surface
+- this block is config-only, not a CLI flag surface
 - it applies only when `llm.provider: openai_compatible`
 - it is merged into the outgoing chat payload after the curated fields are built
 - it must not override curated settings such as `model`, `temperature`, or `response_format`
@@ -203,7 +203,7 @@ llm:
 
 Notes:
 
-- this block is config-only in M4, not a CLI flag surface
+- this block is config-only, not a CLI flag surface
 - it applies only when `llm.provider: ollama`
 - root-level Ollama fields like `keep_alive` are supported
 - nested `ollama.options` is merged into the request `options`
@@ -249,7 +249,7 @@ This is not allowed in `prompt_file` mode.
 
 ### `max_workers`
 
-Maximum concurrent grading workers.
+Maximum concurrent grading workers. Usally keep local to 1 as system resources are limited to one model usually.
 
 - hosted providers: often `4-10`
 - local Ollama models: usually `1-2`
@@ -257,8 +257,6 @@ Maximum concurrent grading workers.
 ### `passes`
 
 Number of grading passes per item.
-
-Default is `1`.
 
 ### `temperature`
 
@@ -273,7 +271,7 @@ Total attempts per item before it is recorded as a failure.
 
 Examples:
 
-- `1`: try each item once, then use the failure log or rerun later
+- `1`: try each item once, then use the failure log or rerun later. **default**.
 - `2`: one retry after the first failure
 - `3`: up to three total attempts
 
@@ -281,7 +279,7 @@ Examples:
 
 Provider request timeout in seconds.
 
-Local models often need larger values like `180-300`.
+Local models may need larger values like `180-300`. Be sure to run a model suitable for your system to keep under 10 seconds per grading item.
 
 ### `response_mode`
 

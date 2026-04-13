@@ -9,7 +9,7 @@ It is built for workflows like:
 - offline result review
 - AI-assisted scoring pipelines
 
-The core idea is simple:
+The core idea:
 
 1. load queries
 2. fetch or read candidate results
@@ -20,19 +20,10 @@ The core idea is simple:
 
 - grades search results with an OpenAI-compatible or Ollama-backed model
 - supports file-backed and in-memory result inputs
-- writes canonical raw judgments JSON with optional CSV export
+- writes raw judgments JSON with optional CSV export
 - runs concurrently for practical throughput
 - writes incrementally so long runs are not lost
 - supports resume and sidecar failure logs
-
-## What It Does Not Do
-
-- compute IR metrics like NDCG or MRR
-- optimize search queries
-- provide a web UI
-- train or fine-tune models
-
-`judgement-ai` is the grading step, not the whole evaluation stack.
 
 ## Install
 
@@ -42,16 +33,10 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-For local development:
+For local development (pytest and ruff):
 
 ```bash
 pip install -e ".[dev]"
-```
-
-For optional validation tooling:
-
-```bash
-pip install -e ".[dev,validate]"
 ```
 
 ## Quickstart
@@ -182,7 +167,7 @@ The CLI reads a pre-fetched JSON file through `--results-file`.
 Library users can either pass the same shape to `InMemoryResultsFetcher(...)` or store it in
 `results.json` for `FileResultsFetcher(...)`.
 
-The canonical shape looks like:
+The shape looks like:
 
 ```json
 {
@@ -233,9 +218,9 @@ For example, this will be visible to the model:
 
 ## Outputs
 
-The canonical grading artifact is full-fidelity JSON.
+The grading artifact is full-fidelity JSON.
 
-### Canonical Raw Judgments JSON
+### Raw Judgments JSON
 
 ```json
 [
@@ -280,7 +265,7 @@ Long runs are meant to be recoverable.
 
 - successful results are written incrementally
 - failed items are written to a sidecar `*-failures.json`
-- `--resume` skips already completed `(query, doc_id)` pairs from the canonical raw JSON artifact
+- `--resume` skips already completed `(query, doc_id)` pairs from the raw JSON artifact
 - `--max-attempts 1` means one attempt now, then rely on the failure log or a later rerun if needed
 
 Example:
@@ -319,11 +304,11 @@ judgement-ai grade --config judgement-ai.yaml
 
 ## Configuration
 
-An example config file is included at [judgement-ai.yaml.example](judgement-ai.yaml.example).
+An example config file is included at [judgement-ai.yaml.example](docs/judgement-ai.yaml.example).
 
 For a fuller configuration reference, see [configuration.md](docs/configuration.md).
 
-The config now supports three clear customization levels:
+The config supports three clear customization levels:
 
 - curated defaults only
 - structured prompt tuning through `grading.prompt.instructions` and `grading.prompt.output_instructions`
@@ -355,21 +340,14 @@ Prompt and grading tunings such as prompt mode, `response_mode`, temperature, at
 
 This project is licensed under the [MIT License](LICENSE).
 
-## Optional Validation
-
-The repo includes optional validation tooling against Amazon ESCI under [`validate/`](validate), but validation is not required to use the grading pipeline.
-
-If you want to run the benchmark workflow, start with [validation-runbook.md](docs/validation-runbook.md).
-
 ## Documentation
 
 User-facing docs:
 
+- [READNE.md](README.md)
 - [configuration.md](docs/configuration.md)
-- [validation-runbook.md](docs/validation-runbook.md)
-- [amazon-benchmark.md](docs/amazon-benchmark.md)
 
-Contributor-facing docs:
+Agent facing docs:
 
 - [AGENT.md](AGENT.md)
 - [PIPELINE.md](PIPELINE.md)
@@ -381,12 +359,3 @@ pip install -e ".[dev]"
 python3 -m pytest
 python3 -m ruff check .
 ```
-
-## Status
-
-The core library and CLI are implemented and usable.
-
-Validation tooling is present but benchmark claims are intentionally conservative until published results are finalized.
-
-# REFACTOR BRANCH TODO
-- Add ability to select profiles, instead of passing parameters when calling in the grader, users should be able to have config files that contain all necessary settings, prompt context, end points etc... This was possbile before the refactor but it was done in prompts.py in a bad way. Validation currently has no way to load a profile.
