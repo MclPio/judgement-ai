@@ -1,5 +1,7 @@
 # judgement-ai
 
+<img width="1440" height="480" alt="ARC-26106-2201-3x1" src="https://github.com/user-attachments/assets/a7fb4e37-3282-48fe-8f1e-898c3ebd165c" />
+
 `judgement-ai` is a Python library and CLI for generating judgment lists with an LLM.
 
 It is built for workflows like:
@@ -14,6 +16,7 @@ The core idea:
 1. load queries
 2. fetch or read candidate results
 3. ask an LLM to score each `(query, document)` pair
+
 4. write standard output that can feed the rest of your evaluation workflow
 
 ## What It Does
