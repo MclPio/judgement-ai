@@ -301,6 +301,7 @@ def prepare_output_files(
         return
 
     prepare_single_output_file(path=output_path, force=force)
+    output_path.write_text("[]", encoding="utf-8")
     if failed_log_path.exists():
         failed_log_path.unlink()
     if csv_output_path is not None:

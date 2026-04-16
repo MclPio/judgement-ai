@@ -4,6 +4,8 @@ import runpy
 from pathlib import Path
 
 import judgement_ai
+from judgement_ai.config import load_config
+from judgement_ai.fetcher import FileResultsFetcher
 
 
 class DummyFetcher:
@@ -48,3 +50,26 @@ def test_ollama_example_uses_supported_grader_arguments(monkeypatch) -> None:
     assert init_kwargs["max_attempts"] == 1
     assert "max_retries" not in init_kwargs
     assert grade_kwargs["queries"] == ["vitamin b6"]
+
+
+def test_example_configs_load() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    openai_config = load_config(repo_root / "examples/openai-config.yaml")
+    ollama_config = load_config(repo_root / "examples/ollama-config.yaml")
+
+    assert openai_config["queries"] == "examples/queries.txt"
+    assert openai_config["search"]["results_file"] == "examples/results.json"
+    assert ollama_config["llm"]["provider"] == "ollama"
+    assert ollama_config["grading"]["response_mode"] == "json_schema"
+
+
+def test_example_results_json_is_loadable() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    fetcher = FileResultsFetcher(repo_root / "examples/results.json")
+
+    vitamin_results = fetcher.fetch("vitamin b6")
+    magnesium_results = fetcher.fetch("magnesium for sleep")
+
+    assert [item.doc_id for item in vitamin_results] == ["vit-b6-100mg", "b-complex"]
+    assert [item.doc_id for item in magnesium_results] == ["mag-glycinate", "melatonin"]

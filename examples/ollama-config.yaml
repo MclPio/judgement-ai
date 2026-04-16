@@ -1,0 +1,27 @@
+llm:
+  base_url: http://localhost:11434/v1
+  api_key: null
+  model: qwen3.5:9b
+  provider: ollama
+  think: false
+  ollama:
+    keep_alive: "15m"
+    options:
+      top_k: 20
+
+search:
+  results_file: examples/results.json
+
+grading:
+  domain_context: "Nutritional supplements catalog"
+  max_workers: 1
+  passes: 1
+  temperature: 0
+  max_attempts: 1
+  request_timeout: 180
+  response_mode: json_schema
+
+output:
+  path: judgments.json
+
+queries: examples/queries.txt

@@ -1130,6 +1130,64 @@ def test_grade_command_writes_optional_csv_export(monkeypatch, tmp_path) -> None
     assert "query,docid,rating" in csv_output_path.read_text(encoding="utf-8")
 
 
+def test_grade_command_all_failures_still_writes_empty_json_and_csv(monkeypatch, tmp_path) -> None:
+    queries_path = tmp_path / "queries.txt"
+    queries_path.write_text("vitamin b6\n", encoding="utf-8")
+    results_file = tmp_path / "results.json"
+    results_file.write_text(
+        json.dumps(
+            {
+                "vitamin b6": [
+                    {"doc_id": "123", "rank": 1, "fields": {"title": "Vitamin B6 100mg"}}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "judgments.json"
+    csv_output_path = tmp_path / "judgments.csv"
+    failure_log_path = tmp_path / "judgments-failures.json"
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, json, timeout
+
+        class DummyResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {"choices": [{"message": {"content": "Missing score line"}}]}
+
+        return DummyResponse()
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "grade",
+            "--queries",
+            str(queries_path),
+            "--results-file",
+            str(results_file),
+            "--model",
+            "gpt-test",
+            "--api-key",
+            "test-key",
+            "--output",
+            str(output_path),
+            "--csv-output",
+            str(csv_output_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(output_path.read_text(encoding="utf-8")) == []
+    assert "query,docid,rating" in csv_output_path.read_text(encoding="utf-8")
+    assert failure_log_path.exists()
+
+
 def test_export_csv_command_converts_raw_json(tmp_path) -> None:
     input_path = tmp_path / "judgments.json"
     input_path.write_text(

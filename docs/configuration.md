@@ -2,7 +2,9 @@
 
 This guide covers the main runtime configuration for `judgement-ai`.
 
-Copy [judgement-ai.yaml.example](../judgement-ai.yaml.example) and trim it down to the parts you need.
+Copy [judgement-ai.yaml.example](judgement-ai.yaml.example) and trim it down to the parts you need.
+
+For runnable end-to-end examples, see [examples/README.md](../examples/README.md).
 
 ## File Layout
 
