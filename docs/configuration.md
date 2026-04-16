@@ -56,6 +56,15 @@ queries: queries.txt
 
 Environment variables like `${OPENAI_API_KEY}` are expanded automatically.
 
+## Preview Command
+
+Use `judgement-ai preview` to inspect the resolved runtime prompt and request payload before you run
+grading.
+
+```bash
+judgement-ai preview --config judgement-ai.yaml
+```
+
 ## Prompt Modes
 
 `judgement-ai` supports two prompt modes.

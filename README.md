@@ -70,6 +70,17 @@ judgement-ai grade \
   --output judgments.json
 ```
 
+### Preview prompt and request shape
+
+```bash
+judgement-ai preview \
+  --config judgement-ai.yaml
+```
+
+`preview` is read-only. It uses built-in placeholder query and result data so you can inspect the
+resolved prompt mode, provider, response mode, rendered prompt, and outgoing request payload shape
+without configuring `queries` or `search.results_file`, and without spending provider time.
+
 ## Library Examples
 
 ### File-backed results

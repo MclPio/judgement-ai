@@ -187,6 +187,45 @@ def build_grader(
     prompt_file: Path | None,
 ) -> Grader:
     """Build the grader from CLI arguments and config."""
+    grader_kwargs = resolve_grader_kwargs(
+        llm_config=llm_config,
+        grading_config=grading_config,
+        model_name=model_name,
+        base_url=base_url,
+        api_key=api_key,
+        domain_context=domain_context,
+        max_workers=max_workers,
+        passes=passes,
+        temperature=temperature,
+        request_timeout=request_timeout,
+        max_attempts=max_attempts,
+        provider=provider,
+        response_mode=response_mode,
+        think=think,
+        prompt_file=prompt_file,
+    )
+    return Grader(fetcher=fetcher, **grader_kwargs)
+
+
+def resolve_grader_kwargs(
+    *,
+    llm_config: dict[str, Any],
+    grading_config: dict[str, Any],
+    model_name: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    domain_context: str | None,
+    max_workers: int | None,
+    passes: int | None,
+    temperature: float | None,
+    request_timeout: float | None,
+    max_attempts: int | None,
+    provider: str | None,
+    response_mode: str | None,
+    think: bool | None,
+    prompt_file: Path | None,
+) -> dict[str, Any]:
+    """Resolve grader settings from CLI arguments and config."""
     llm_model = model_name or config_str(llm_config, "model")
     if not llm_model:
         raise click.UsageError("Provide --model or set llm.model in the config file.")
@@ -202,36 +241,39 @@ def build_grader(
         effective_provider=effective_provider,
     )
 
-    return Grader(
-        fetcher=fetcher,
-        llm_base_url=base_url or config_str(llm_config, "base_url") or "https://api.openai.com/v1",
-        llm_api_key=api_key if api_key is not None else config_str(llm_config, "api_key"),
-        llm_model=llm_model,
-        domain_context=prompt_settings["domain_context"],
-        scale_min=prompt_settings["scale_min"],
-        scale_max=prompt_settings["scale_max"],
-        scale_labels=prompt_settings["scale_labels"],
-        max_workers=max_workers or config_int(grading_config, "max_workers") or 10,
-        passes=passes or config_int(grading_config, "passes") or 1,
-        temperature=temperature
-        if temperature is not None
-        else config_float(grading_config, "temperature")
-        or 0.0,
-        max_attempts=max_attempts or config_int(grading_config, "max_attempts") or 1,
-        request_timeout=request_timeout
-        if request_timeout is not None
-        else config_float(grading_config, "request_timeout")
-        or 60.0,
-        provider=effective_provider,
-        response_mode=response_mode or config_str(grading_config, "response_mode") or "text",
-        think=think if think is not None else config_bool(llm_config, "think"),
-        prompt_template=prompt_settings["prompt_template"],
-        prompt_contract=prompt_settings["prompt_contract"],
-        prompt_instructions=prompt_settings["prompt_instructions"],
-        output_instructions=prompt_settings["output_instructions"],
-        openai_compatible_options=openai_compatible_options,
-        ollama_options=ollama_options,
-    )
+    return {
+        "llm_base_url": (
+            base_url or config_str(llm_config, "base_url") or "https://api.openai.com/v1"
+        ),
+        "llm_api_key": api_key if api_key is not None else config_str(llm_config, "api_key"),
+        "llm_model": llm_model,
+        "domain_context": prompt_settings["domain_context"],
+        "scale_min": prompt_settings["scale_min"],
+        "scale_max": prompt_settings["scale_max"],
+        "scale_labels": prompt_settings["scale_labels"],
+        "max_workers": max_workers or config_int(grading_config, "max_workers") or 10,
+        "passes": passes or config_int(grading_config, "passes") or 1,
+        "temperature": (
+            temperature
+            if temperature is not None
+            else config_float(grading_config, "temperature") or 0.0
+        ),
+        "max_attempts": max_attempts or config_int(grading_config, "max_attempts") or 1,
+        "request_timeout": (
+            request_timeout
+            if request_timeout is not None
+            else config_float(grading_config, "request_timeout") or 60.0
+        ),
+        "provider": effective_provider,
+        "response_mode": response_mode or config_str(grading_config, "response_mode") or "text",
+        "think": think if think is not None else config_bool(llm_config, "think"),
+        "prompt_template": prompt_settings["prompt_template"],
+        "prompt_contract": prompt_settings["prompt_contract"],
+        "prompt_instructions": prompt_settings["prompt_instructions"],
+        "output_instructions": prompt_settings["output_instructions"],
+        "openai_compatible_options": openai_compatible_options,
+        "ollama_options": ollama_options,
+    }
 
 
 def default_failure_log_path(output_path: Path) -> Path:

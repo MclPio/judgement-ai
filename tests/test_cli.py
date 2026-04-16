@@ -1234,3 +1234,102 @@ def test_cli_version_option() -> None:
 
     assert result.exit_code == 0
     assert "judgement-ai" in result.output
+
+
+def test_preview_command_uses_placeholder_input_without_network(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  base_url: https://api.example.com/v1",
+                "  api_key: secret-preview-key",
+                "  model: gpt-test",
+                "grading:",
+                "  prompt:",
+                "    instructions: |",
+                "      Use the travel audio rubric.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fail_post(*args, **kwargs):
+        raise AssertionError("preview must not make network calls")
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fail_post)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["preview", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Prompt mode: structured" in result.output
+    assert "Resolved provider: openai_compatible" in result.output
+    assert "Response mode: text" in result.output
+    assert "Query: wireless headphones for travel" in result.output
+    assert "title: Compact Noise Cancelling Headphones" in result.output
+    assert (
+        "description: Lightweight over-ear headphones for flights and commuting."
+        in result.output
+    )
+    assert "Use the travel audio rubric." in result.output
+    assert "secret-preview-key" not in result.output
+    assert "[REDACTED]" in result.output
+
+
+def test_preview_command_supports_prompt_file_mode_without_queries_or_results(tmp_path) -> None:
+    prompt_file = tmp_path / "custom-prompt.txt"
+    prompt_file.write_text("Query: {query}\nResult:\n{result_fields}", encoding="utf-8")
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  model: gpt-test",
+                "grading:",
+                f"  prompt_file: {prompt_file}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["preview", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Prompt mode: prompt_file" in result.output
+    assert "Query: wireless headphones for travel" in result.output
+    assert "Result:\ntitle: Compact Noise Cancelling Headphones" in result.output
+
+
+def test_preview_command_shows_ollama_json_schema_payload(tmp_path) -> None:
+    config_path = tmp_path / "judgement-ai.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "llm:",
+                "  base_url: http://localhost:11434/v1",
+                "  model: qwen3.5:9b",
+                "  provider: ollama",
+                "  think: false",
+                "  ollama:",
+                '    keep_alive: "15m"',
+                "    options:",
+                "      top_k: 20",
+                "grading:",
+                "  response_mode: json_schema",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["preview", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Resolved provider: ollama" in result.output
+    assert "Response mode: json_schema" in result.output
+    assert '"endpoint": "http://localhost:11434/api/chat"' in result.output
+    assert '"keep_alive": "15m"' in result.output
+    assert '"top_k": 20' in result.output
+    assert '"format": {' in result.output

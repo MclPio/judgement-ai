@@ -103,27 +103,15 @@ def call_openai_compatible(
     openai_compatible_options: dict[str, Any] | None = None,
 ) -> str | dict[str, Any]:
     """Call an OpenAI-compatible chat completions endpoint."""
-    headers = {"Content-Type": "application/json"}
-    if llm_api_key:
-        headers["Authorization"] = f"Bearer {llm_api_key}"
-
-    payload: dict[str, Any] = {
-        "model": llm_model,
-        "temperature": temperature,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if response_mode == "json_schema":
-        payload["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "judgement_ai_grade_result",
-                "strict": True,
-                "schema": build_json_schema(scale_min=scale_min, scale_max=scale_max),
-            },
-        }
-    merge_openai_compatible_options(
-        payload=payload,
-        extra_options=openai_compatible_options,
+    headers = build_openai_compatible_headers(llm_api_key=llm_api_key)
+    payload = build_openai_compatible_payload(
+        llm_model=llm_model,
+        temperature=temperature,
+        response_mode=response_mode,
+        prompt=prompt,
+        scale_min=scale_min,
+        scale_max=scale_max,
+        openai_compatible_options=openai_compatible_options,
     )
 
     try:
@@ -162,19 +150,15 @@ def call_ollama(
     ollama_options: dict[str, Any] | None = None,
 ) -> str | dict[str, Any]:
     """Call Ollama's native chat API for think control and structured outputs."""
-    payload: dict[str, Any] = {
-        "model": llm_model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        "options": {"temperature": temperature},
-    }
-    if think is not None:
-        payload["think"] = think
-    if response_mode == "json_schema":
-        payload["format"] = build_json_schema(scale_min=scale_min, scale_max=scale_max)
-    merge_ollama_options(
-        payload=payload,
-        extra_options=ollama_options,
+    payload = build_ollama_payload(
+        llm_model=llm_model,
+        temperature=temperature,
+        response_mode=response_mode,
+        think=think,
+        prompt=prompt,
+        scale_min=scale_min,
+        scale_max=scale_max,
+        ollama_options=ollama_options,
     )
 
     try:
@@ -227,6 +211,46 @@ def extract_openai_message_content(data: dict[str, Any]) -> str:
     )
 
 
+def build_openai_compatible_headers(*, llm_api_key: str | None) -> dict[str, str]:
+    """Build OpenAI-compatible request headers."""
+    headers = {"Content-Type": "application/json"}
+    if llm_api_key:
+        headers["Authorization"] = f"Bearer {llm_api_key}"
+    return headers
+
+
+def build_openai_compatible_payload(
+    *,
+    llm_model: str,
+    temperature: float,
+    response_mode: str,
+    prompt: str,
+    scale_min: int,
+    scale_max: int,
+    openai_compatible_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build an OpenAI-compatible request payload without sending it."""
+    payload: dict[str, Any] = {
+        "model": llm_model,
+        "temperature": temperature,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if response_mode == "json_schema":
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "judgement_ai_grade_result",
+                "strict": True,
+                "schema": build_json_schema(scale_min=scale_min, scale_max=scale_max),
+            },
+        }
+    merge_openai_compatible_options(
+        payload=payload,
+        extra_options=openai_compatible_options,
+    )
+    return payload
+
+
 def extract_ollama_message_content(data: dict[str, Any]) -> str:
     """Extract text content from an Ollama chat response."""
     try:
@@ -242,6 +266,35 @@ def extract_ollama_message_content(data: dict[str, Any]) -> str:
             failure_type="provider_error",
         )
     return message
+
+
+def build_ollama_payload(
+    *,
+    llm_model: str,
+    temperature: float,
+    response_mode: str,
+    think: bool | None,
+    prompt: str,
+    scale_min: int,
+    scale_max: int,
+    ollama_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build an Ollama chat payload without sending it."""
+    payload: dict[str, Any] = {
+        "model": llm_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "options": {"temperature": temperature},
+    }
+    if think is not None:
+        payload["think"] = think
+    if response_mode == "json_schema":
+        payload["format"] = build_json_schema(scale_min=scale_min, scale_max=scale_max)
+    merge_ollama_options(
+        payload=payload,
+        extra_options=ollama_options,
+    )
+    return payload
 
 
 def build_provider_error_message(*, exc: requests.RequestException, response_mode: str) -> str:

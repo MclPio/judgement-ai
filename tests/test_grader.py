@@ -7,6 +7,7 @@ import requests
 
 from judgement_ai.fetcher import SearchResult
 from judgement_ai.grading import GradeProgress, Grader, ParseError, ProviderError
+from judgement_ai.grading.providers import build_ollama_payload, build_openai_compatible_payload
 
 
 class StaticFetcher:
@@ -163,6 +164,45 @@ def test_call_llm_uses_configured_temperature(monkeypatch) -> None:
     grader._call_llm(prompt="Prompt text")
 
     assert captured["json"]["temperature"] == 0.35
+
+
+def test_build_openai_compatible_payload_includes_json_schema_and_extra_options() -> None:
+    payload = build_openai_compatible_payload(
+        llm_model="gpt-test",
+        temperature=0.2,
+        response_mode="json_schema",
+        prompt="Prompt text",
+        scale_min=0,
+        scale_max=3,
+        openai_compatible_options={"top_p": 0.9},
+    )
+
+    assert payload["model"] == "gpt-test"
+    assert payload["messages"][0]["content"] == "Prompt text"
+    assert payload["temperature"] == 0.2
+    assert payload["top_p"] == 0.9
+    assert payload["response_format"]["type"] == "json_schema"
+
+
+def test_build_ollama_payload_includes_format_and_merged_options() -> None:
+    payload = build_ollama_payload(
+        llm_model="qwen3.5:9b",
+        temperature=0.1,
+        response_mode="json_schema",
+        think=False,
+        prompt="Prompt text",
+        scale_min=0,
+        scale_max=3,
+        ollama_options={"keep_alive": "15m", "options": {"top_k": 20}},
+    )
+
+    assert payload["model"] == "qwen3.5:9b"
+    assert payload["messages"][0]["content"] == "Prompt text"
+    assert payload["think"] is False
+    assert payload["keep_alive"] == "15m"
+    assert payload["options"]["temperature"] == 0.1
+    assert payload["options"]["top_k"] == 20
+    assert payload["format"]["type"] == "object"
 
 
 def test_call_llm_merges_openai_compatible_options(monkeypatch) -> None:

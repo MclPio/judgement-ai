@@ -7,6 +7,7 @@ import click
 from judgement_ai import __version__
 from judgement_ai.cli.commands.export_csv import export_csv
 from judgement_ai.cli.commands.grade import grade
+from judgement_ai.cli.commands.preview import preview
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -16,4 +17,5 @@ def main() -> None:
 
 
 main.add_command(grade)
+main.add_command(preview)
 main.add_command(export_csv)
