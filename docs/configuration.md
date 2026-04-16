@@ -121,7 +121,7 @@ In this mode:
 
 The repo includes [examples/custom_prompt_template.txt](../examples/custom_prompt_template.txt) as a starting point.
 
-Once you choose `prompt_file`, you own the prompt semantics. The library still handles runtime injection of the query and result fields, but it does not mix in scale labels, domain context, or output instructions. Be careful of how you describe the output it produces, as judgement-ai grader needs the output to be `SCORE: <integer>` for text parsing and json of a specific shape `{"score": <integer>, "reasoning": <string>}`
+Once you choose `prompt_file`, you own the prompt semantics. The library still injects the query and result fields at runtime, but it does not mix in scale labels, domain context, or output instructions. Make sure your prompt still asks for an output shape the grader can parse: `SCORE: <integer>` in text mode, or `{"score": <integer>, "reasoning": <string>}` in `json_schema` mode.
 
 ## `llm`
 
@@ -258,7 +258,7 @@ This is not allowed in `prompt_file` mode.
 
 ### `max_workers`
 
-Maximum concurrent grading workers. Usally keep local to 1 as system resources are limited to one model usually.
+Maximum concurrent grading workers. Usually keep local runs near `1` because one model process is often the bottleneck.
 
 - hosted providers: often `4-10`
 - local Ollama models: usually `1-2`

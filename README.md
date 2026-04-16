@@ -355,13 +355,13 @@ This project is licensed under the [MIT License](LICENSE).
 
 User-facing docs:
 
-- [READNE.md](README.md)
+- [README.md](README.md)
 - [configuration.md](docs/configuration.md)
 
 Agent facing docs:
 
-- [AGENT.md](AGENT.md)
-- [PIPELINE.md](PIPELINE.md)
+- [AGENT.md](docs/AGENT.md)
+- [PIPELINE.md](docs/PIPELINE.md)
 
 ## Development
 
