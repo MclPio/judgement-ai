@@ -4,20 +4,13 @@ import json
 
 import pytest
 
-from judgement_ai.fetcher import ElasticsearchFetcher, FileResultsFetcher, normalize_result
-
-
-class DummyResponse:
-    def __init__(self, payload, status_code: int = 200) -> None:
-        self._payload = payload
-        self.status_code = status_code
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise RuntimeError(f"http {self.status_code}")
-
-    def json(self):
-        return self._payload
+from judgement_ai.fetcher import (
+    FileResultsFetcher,
+    InMemoryResultsFetcher,
+    SearchResult,
+    normalize_result,
+    normalize_results_mapping,
+)
 
 
 def test_normalize_result_requires_doc_id() -> None:
@@ -93,45 +86,78 @@ def test_file_results_fetcher_reports_invalid_json_path(tmp_path) -> None:
         fetcher.fetch("vitamin b6")
 
 
-def test_elasticsearch_fetcher_normalizes_hits(monkeypatch) -> None:
-    calls = {}
+def test_normalize_results_mapping_assigns_default_rank() -> None:
+    payload = normalize_results_mapping(
+        {
+            "vitamin b6": [
+                {"doc_id": "123", "fields": {"title": "Vitamin B6 100mg"}},
+                {"doc_id": "456", "rank": 7, "fields": {"title": "B Complex"}},
+            ]
+        },
+        source_name="Test payload",
+    )
 
-    def fake_get(url: str, *, params, timeout):
-        calls["url"] = url
-        calls["params"] = params
-        calls["timeout"] = timeout
-        return DummyResponse(
-            {
-                "hits": {
-                    "hits": [
-                        {"_id": "123", "_source": {"title": "Vitamin B6 100mg"}},
-                        {"_id": "456", "_source": {"title": "Energy Support"}},
-                    ]
-                }
-            }
-        )
+    assert [item.rank for item in payload["vitamin b6"]] == [1, 7]
 
-    monkeypatch.setattr("judgement_ai.fetcher.requests.get", fake_get)
 
-    fetcher = ElasticsearchFetcher(url="https://search.example.com/catalog", top_n=24)
+def test_in_memory_results_fetcher_loads_query_results() -> None:
+    fetcher = InMemoryResultsFetcher(
+        {
+            "vitamin b6": [
+                {"doc_id": "123", "fields": {"title": "Vitamin B6 100mg"}},
+                {"doc_id": "456", "rank": 7, "fields": {"title": "B Complex"}},
+            ]
+        }
+    )
+
     results = fetcher.fetch("vitamin b6")
 
-    assert calls["url"] == "https://search.example.com/catalog/_search"
-    assert calls["params"] == {"size": 24, "q": "vitamin b6"}
-    assert len(results) == 2
-    assert results[0].doc_id == "123"
-    assert results[0].rank == 1
-    assert results[1].rank == 2
+    assert [item.doc_id for item in results] == ["123", "456"]
+    assert [item.rank for item in results] == [1, 7]
+    assert results[0].fields["title"] == "Vitamin B6 100mg"
 
 
-def test_elasticsearch_fetcher_wraps_request_errors(monkeypatch) -> None:
-    def fake_get(url: str, *, params, timeout):
-        del url, params, timeout
-        raise OSError("network down")
+def test_in_memory_results_fetcher_accepts_search_result_objects() -> None:
+    fetcher = InMemoryResultsFetcher(
+        {
+            "vitamin b6": [
+                SearchResult(doc_id="123", rank=1, fields={"title": "Vitamin B6 100mg"}),
+            ]
+        }
+    )
 
-    monkeypatch.setattr("judgement_ai.fetcher.requests.get", fake_get)
+    results = fetcher.fetch("vitamin b6")
 
-    fetcher = ElasticsearchFetcher(url="https://search.example.com/catalog")
+    assert results == [
+        SearchResult(doc_id="123", rank=1, fields={"title": "Vitamin B6 100mg"})
+    ]
 
-    with pytest.raises(RuntimeError, match="Failed to fetch results"):
-        fetcher.fetch("vitamin b6")
+
+def test_in_memory_results_fetcher_returns_copy_for_query_results() -> None:
+    fetcher = InMemoryResultsFetcher(
+        {
+            "vitamin b6": [
+                {"doc_id": "123", "fields": {"title": "Vitamin B6 100mg"}},
+            ]
+        }
+    )
+
+    results = fetcher.fetch("vitamin b6")
+    results.append(SearchResult(doc_id="456", rank=2, fields={}))
+
+    assert [item.doc_id for item in fetcher.fetch("vitamin b6")] == ["123"]
+
+
+def test_in_memory_results_fetcher_rejects_invalid_top_level_payload() -> None:
+    with pytest.raises(ValueError, match="maps each query to a list"):
+        InMemoryResultsFetcher([{"query": "vitamin b6"}])
+
+
+def test_in_memory_results_fetcher_rejects_non_list_query_payload() -> None:
+    with pytest.raises(ValueError, match="must be a list of results"):
+        InMemoryResultsFetcher({"vitamin b6": {"doc_id": "123"}})
+
+
+def test_in_memory_results_fetcher_rejects_invalid_result_item() -> None:
+    with pytest.raises(ValueError, match="must be an object"):
+        InMemoryResultsFetcher({"vitamin b6": ["not a result object"]})

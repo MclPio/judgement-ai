@@ -2,12 +2,19 @@ llm:
   base_url: https://api.openai.com/v1
   api_key: ${OPENAI_API_KEY}
   model: gpt-5.1
+  # provider: openai_compatible
+  # think: false
+  # openai_compatible:
+  #   top_p: 0.9
+  #   provider:
+  #     require_parameters: true
+  # ollama:
+  #   keep_alive: "15m"
+  #   options:
+  #     top_k: 20
 
 search:
-  url: https://my-elastic/catalog
-  # Or use:
   # results_file: results.json
-  top_n: 24
 
 grading:
   scale_min: 0
@@ -21,13 +28,18 @@ grading:
   max_workers: 10
   passes: 1
   temperature: 0
-  max_retries: 1
+  max_attempts: 1
   request_timeout: 60
   response_mode: text
+  prompt:
+    # instructions: |
+    #   You are grading supplement search results.
+    # output_instructions: |
+    #   First explain your reasoning briefly, then output SCORE: <number>
   prompt_file: null
 
 output:
-  format: quepid_csv
-  path: judgments.csv
+  path: judgments.json
+  csv_path: judgments.csv
 
 queries: queries.txt

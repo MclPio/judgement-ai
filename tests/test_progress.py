@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from judgement_ai.grader import GradeProgress
+from judgement_ai.grading import GradeProgress
 from judgement_ai.progress import TerminalProgressReporter
 
 

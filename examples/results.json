@@ -1,0 +1,38 @@
+{
+  "vitamin b6": [
+    {
+      "doc_id": "vit-b6-100mg",
+      "rank": 1,
+      "fields": {
+        "title": "Vitamin B6 100mg",
+        "description": "Supports energy metabolism and nervous system health."
+      }
+    },
+    {
+      "doc_id": "b-complex",
+      "rank": 2,
+      "fields": {
+        "title": "Vitamin B Complex",
+        "description": "Balanced B vitamin formula for daily support."
+      }
+    }
+  ],
+  "magnesium for sleep": [
+    {
+      "doc_id": "mag-glycinate",
+      "rank": 1,
+      "fields": {
+        "title": "Magnesium Glycinate Capsules",
+        "description": "Gentle magnesium supplement commonly used in evening routines."
+      }
+    },
+    {
+      "doc_id": "melatonin",
+      "rank": 2,
+      "fields": {
+        "title": "Melatonin 3mg",
+        "description": "Sleep support supplement that is not a magnesium product."
+      }
+    }
+  ]
+}

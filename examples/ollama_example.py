@@ -11,7 +11,7 @@ grader = Grader(
     provider="ollama",
     response_mode="json_schema",
     think=False,
-    max_retries=1,
+    max_attempts=1,
     request_timeout=300,
 )
 

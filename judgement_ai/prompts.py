@@ -7,8 +7,14 @@ from pathlib import Path
 from string import Formatter
 from typing import Any
 
-REQUIRED_PROMPT_FIELDS = {"query", "result_fields", "scale_labels"}
-OPTIONAL_PROMPT_FIELDS = {"domain_context", "output_instructions"}
+STRUCTURED_REQUIRED_PROMPT_FIELDS = {"query", "result_fields", "scale_labels"}
+STRUCTURED_OPTIONAL_PROMPT_FIELDS = {
+    "domain_context",
+    "instructions",
+    "output_instructions",
+}
+PROMPT_FILE_REQUIRED_FIELDS = {"query", "result_fields"}
+PROMPT_FILE_ALLOWED_FIELDS = {"query", "result_fields"}
 
 DEFAULT_SCALE_LABELS = {
     0: "Completely irrelevant - the result has no connection to the query.",
@@ -23,9 +29,13 @@ DEFAULT_SCALE_LABELS = {
     ),
 }
 
-DEFAULT_PROMPT_TEMPLATE = """You are a search relevance expert.
+DEFAULT_INSTRUCTIONS = (
+    "You are a search relevance expert.\n"
+    "Your task is to grade how relevant the following search result is to the query."
+)
+
+DEFAULT_PROMPT_TEMPLATE = """{instructions}
 {domain_context}
-Your task is to grade how relevant the following search result is to the query.
 
 Use this scale:
 {scale_labels}
@@ -47,69 +57,13 @@ DEFAULT_OUTPUT_INSTRUCTIONS = {
         "SCORE: <number>"
     ),
     "json_schema": (
-        "Respond with a JSON object matching the required schema.\n"
-        "Use a concise reasoning string and an integer score from the provided scale."
+        "Respond ONLY with a valid JSON object.\n"
+        "Output must use EXACTLY these fields:\n"
+        "- score (integer from the provided scale)\n"
+        "- reasoning (string)\n"
+        'Example output:\n{"score": <integer>, "reasoning": <string>}'
     ),
 }
-
-AMAZON_ESCI_SCALE_LABELS = {
-    0: "Irrelevant - does not satisfy the shopping intent expressed by the query.",
-    1: (
-        "Complement - related or compatible add-on, accessory, or adjacent item, "
-        "but not the product the shopper is trying to buy."
-    ),
-    2: (
-        "Substitute - a different product that could plausibly satisfy the same "
-        "shopping need, but is not an exact or near-exact match."
-    ),
-    3: (
-        "Exact or near-exact match - directly satisfies the intended product search, "
-        "including important constraints such as brand, size, quantity, compatibility, "
-        "and exclusions."
-    ),
-}
-
-AMAZON_ESCI_PROMPT_TEMPLATE = """You are an ecommerce product-search relevance judge
-working with the Amazon ESCI taxonomy.
-{domain_context}
-Evaluate whether the product satisfies the shopping intent of the query.
-
-Use this ESCI-aligned scale:
-{scale_labels}
-
-Important judging rules:
-- Treat exact constraints seriously, including words like "without",
-  compatibility requirements, quantity, capacity, material, and pack size.
-- Treat brand constraints seriously when the query names a brand or product line.
-- Treat price ceilings like "$5 items" as real constraints, not hints.
-- Distinguish substitutes from complements carefully: accessories and add-ons are
-  complements, not substitutes.
-- Be conservative with short or ambiguous queries. Do not broaden intent from a
-  single letter or token fragment.
-- If the result only matches a broad topic while violating a key constraint, it
-  should not receive a high score.
-
-{output_instructions}
-
-Query: {query}
-
-Product:
-{result_fields}
-
-Reasoning:
-"""
-
-PROMPT_PROFILES = {
-    "default": {
-        "template": DEFAULT_PROMPT_TEMPLATE,
-        "scale_labels": DEFAULT_SCALE_LABELS,
-    },
-    "amazon_esci": {
-        "template": AMAZON_ESCI_PROMPT_TEMPLATE,
-        "scale_labels": AMAZON_ESCI_SCALE_LABELS,
-    },
-}
-
 
 def load_prompt_template(path: str | Path | None = None) -> str:
     """Return the default prompt or load a custom template from disk."""
@@ -124,20 +78,39 @@ def load_prompt_template(path: str | Path | None = None) -> str:
     return raw_value
 
 
-def validate_prompt_template(template: str) -> None:
-    """Ensure required placeholders exist before grading begins."""
-    placeholders = {
+def extract_prompt_placeholders(template: str) -> set[str]:
+    """Return the placeholder names used in a prompt template."""
+    return {
         field_name
         for _, field_name, _, _ in Formatter().parse(template)
         if field_name is not None
     }
-    missing = REQUIRED_PROMPT_FIELDS - placeholders
+
+
+def validate_prompt_template(
+    template: str,
+    *,
+    required_fields: set[str] | None = None,
+    allowed_fields: set[str] | None = None,
+) -> None:
+    """Ensure required placeholders exist before grading begins."""
+    placeholders = extract_prompt_placeholders(template)
+    required = required_fields or STRUCTURED_REQUIRED_PROMPT_FIELDS
+    missing = required - placeholders
     if missing:
         msg = (
             "Prompt template is missing required placeholders: "
             f"{', '.join(sorted(missing))}"
         )
         raise ValueError(msg)
+    if allowed_fields is not None:
+        unexpected = placeholders - allowed_fields
+        if unexpected:
+            msg = (
+                "Prompt template uses unsupported placeholders: "
+                f"{', '.join(sorted(unexpected))}"
+            )
+            raise ValueError(msg)
 
 
 def validate_scale_labels(
@@ -200,18 +173,6 @@ def render_output_instructions(response_mode: str) -> str:
         raise ValueError(f"Unsupported response_mode: {response_mode!r}") from exc
 
 
-def get_prompt_profile(name: str | None) -> dict[str, Any]:
-    """Resolve a named prompt profile."""
-    profile_name = name or "default"
-    try:
-        return PROMPT_PROFILES[profile_name]
-    except KeyError as exc:
-        available = ", ".join(sorted(PROMPT_PROFILES))
-        raise ValueError(
-            f"Unsupported prompt profile {profile_name!r}. Available: {available}."
-        ) from exc
-
-
 def build_prompt(
     *,
     query: str,
@@ -219,21 +180,42 @@ def build_prompt(
     scale_labels: dict[int, str] | None = None,
     domain_context: str | None = None,
     prompt_template: str | None = None,
+    prompt_instructions: str | None = None,
+    output_instructions: str | None = None,
     response_mode: str = "text",
+    prompt_contract: str = "structured",
 ) -> str:
     """Build a fully formatted grading prompt."""
     labels = scale_labels or DEFAULT_SCALE_LABELS
     template = prompt_template or DEFAULT_PROMPT_TEMPLATE
-    validate_prompt_template(template)
-    validate_scale_labels(
-        scale_min=min(labels),
-        scale_max=max(labels),
-        scale_labels=labels,
-    )
+    if prompt_contract == "structured":
+        validate_prompt_template(
+            template,
+            required_fields=STRUCTURED_REQUIRED_PROMPT_FIELDS,
+            allowed_fields=(
+                STRUCTURED_REQUIRED_PROMPT_FIELDS | STRUCTURED_OPTIONAL_PROMPT_FIELDS
+            ),
+        )
+        validate_scale_labels(
+            scale_min=min(labels),
+            scale_max=max(labels),
+            scale_labels=labels,
+        )
+    elif prompt_contract == "prompt_file":
+        validate_prompt_template(
+            template,
+            required_fields=PROMPT_FILE_REQUIRED_FIELDS,
+            allowed_fields=PROMPT_FILE_ALLOWED_FIELDS,
+        )
+    else:
+        raise ValueError(f"Unsupported prompt_contract: {prompt_contract!r}")
     return template.format(
         query=query.strip(),
         result_fields=render_result_fields(result_fields),
         scale_labels=render_scale_labels(labels),
         domain_context=render_domain_context(domain_context),
-        output_instructions=render_output_instructions(response_mode),
+        instructions=(prompt_instructions or DEFAULT_INSTRUCTIONS).strip(),
+        output_instructions=(
+            output_instructions or render_output_instructions(response_mode)
+        ).strip(),
     ).strip()

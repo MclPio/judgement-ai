@@ -1,0 +1,27 @@
+llm:
+  base_url: https://api.openai.com/v1
+  api_key: ${OPENAI_API_KEY}
+  model: gpt-5.1
+
+search:
+  results_file: examples/results.json
+
+grading:
+  domain_context: "Nutritional supplements catalog"
+  max_workers: 4
+  passes: 1
+  temperature: 0
+  max_attempts: 1
+  request_timeout: 60
+  response_mode: text
+  prompt:
+    instructions: |
+      You are grading supplement search results for a relevance audit.
+    output_instructions: |
+      Explain your reasoning briefly, then output SCORE: <number>
+
+output:
+  path: judgments.json
+  csv_path: judgments.csv
+
+queries: examples/queries.txt

@@ -1,9 +1,10 @@
+import pytest
+
 from judgement_ai.prompts import (
-    AMAZON_ESCI_SCALE_LABELS,
+    DEFAULT_INSTRUCTIONS,
     DEFAULT_PROMPT_TEMPLATE,
     DEFAULT_SCALE_LABELS,
     build_prompt,
-    get_prompt_profile,
     render_domain_context,
     render_output_instructions,
     render_result_fields,
@@ -26,6 +27,15 @@ def test_validate_prompt_template_rejects_missing_required_fields() -> None:
         assert "result_fields" in str(exc)
     else:
         raise AssertionError("Expected ValueError for missing placeholder")
+
+
+def test_validate_prompt_template_rejects_unsupported_prompt_file_placeholders() -> None:
+    with pytest.raises(ValueError, match="unsupported placeholders"):
+        validate_prompt_template(
+            "Query: {query}\nScale: {scale_labels}\nResult: {result_fields}",
+            required_fields={"query", "result_fields"},
+            allowed_fields={"query", "result_fields"},
+        )
 
 
 def test_validate_scale_labels_requires_complete_range() -> None:
@@ -75,6 +85,19 @@ def test_build_prompt_includes_domain_context_scale_and_query() -> None:
     assert "title: Vitamin B6 100mg" in prompt
 
 
+def test_build_prompt_accepts_prompt_overrides() -> None:
+    prompt = build_prompt(
+        query="vitamin b6",
+        result_fields={"title": "Vitamin B6 100mg"},
+        prompt_instructions="Use the vitamin catalog rubric.",
+        output_instructions="Return ONLY score and reasoning.",
+    )
+
+    assert "Use the vitamin catalog rubric." in prompt
+    assert "Return ONLY score and reasoning." in prompt
+    assert DEFAULT_INSTRUCTIONS not in prompt
+
+
 def test_build_prompt_uses_json_schema_output_instructions() -> None:
     prompt = build_prompt(
         query="wireless headphones",
@@ -82,15 +105,18 @@ def test_build_prompt_uses_json_schema_output_instructions() -> None:
         response_mode="json_schema",
     )
 
-    assert "Respond with a JSON object" in prompt
     assert "SCORE: <number>" not in prompt
 
 
-def test_get_prompt_profile_returns_amazon_esci_profile() -> None:
-    profile = get_prompt_profile("amazon_esci")
+def test_build_prompt_supports_prompt_file_contract() -> None:
+    prompt = build_prompt(
+        query="vitamin b6",
+        result_fields={"title": "Vitamin B6 100mg"},
+        prompt_template="Query: {query}\nResult:\n{result_fields}",
+        prompt_contract="prompt_file",
+    )
 
-    assert profile["scale_labels"] == AMAZON_ESCI_SCALE_LABELS
-    assert "Amazon ESCI taxonomy" in profile["template"]
+    assert prompt == "Query: vitamin b6\nResult:\ntitle: Vitamin B6 100mg"
 
 
 def test_render_output_instructions_rejects_unknown_mode() -> None:

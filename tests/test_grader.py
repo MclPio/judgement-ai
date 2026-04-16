@@ -6,7 +6,8 @@ import pytest
 import requests
 
 from judgement_ai.fetcher import SearchResult
-from judgement_ai.grader import GradeProgress, Grader, ParseError, ProviderError
+from judgement_ai.grading import GradeProgress, Grader, ParseError, ProviderError
+from judgement_ai.grading.providers import build_ollama_payload, build_openai_compatible_payload
 
 
 class StaticFetcher:
@@ -43,7 +44,7 @@ def make_grader(
     provider: str = "openai_compatible",
     response_mode: str = "text",
     think: bool | None = None,
-    max_retries: int = 3,
+    max_attempts: int = 3,
     request_timeout: float = 60.0,
     temperature: float = 0.0,
 ) -> Grader:
@@ -65,7 +66,7 @@ def make_grader(
         llm_model="gpt-test",
         passes=passes,
         max_workers=4,
-        max_retries=max_retries,
+        max_attempts=max_attempts,
         request_timeout=request_timeout,
         temperature=temperature,
         provider=provider,
@@ -135,7 +136,7 @@ def test_call_llm_uses_openai_compatible_payload(monkeypatch) -> None:
             {"choices": [{"message": {"content": "Reasoning.\nSCORE: 2"}}]}
         )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader()
     response = grader._call_llm(prompt="Prompt text")
@@ -157,7 +158,7 @@ def test_call_llm_uses_configured_temperature(monkeypatch) -> None:
             {"choices": [{"message": {"content": "Reasoning.\nSCORE: 2"}}]}
         )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader(temperature=0.35)
     grader._call_llm(prompt="Prompt text")
@@ -165,9 +166,82 @@ def test_call_llm_uses_configured_temperature(monkeypatch) -> None:
     assert captured["json"]["temperature"] == 0.35
 
 
+def test_build_openai_compatible_payload_includes_json_schema_and_extra_options() -> None:
+    payload = build_openai_compatible_payload(
+        llm_model="gpt-test",
+        temperature=0.2,
+        response_mode="json_schema",
+        prompt="Prompt text",
+        scale_min=0,
+        scale_max=3,
+        openai_compatible_options={"top_p": 0.9},
+    )
+
+    assert payload["model"] == "gpt-test"
+    assert payload["messages"][0]["content"] == "Prompt text"
+    assert payload["temperature"] == 0.2
+    assert payload["top_p"] == 0.9
+    assert payload["response_format"]["type"] == "json_schema"
+
+
+def test_build_ollama_payload_includes_format_and_merged_options() -> None:
+    payload = build_ollama_payload(
+        llm_model="qwen3.5:9b",
+        temperature=0.1,
+        response_mode="json_schema",
+        think=False,
+        prompt="Prompt text",
+        scale_min=0,
+        scale_max=3,
+        ollama_options={"keep_alive": "15m", "options": {"top_k": 20}},
+    )
+
+    assert payload["model"] == "qwen3.5:9b"
+    assert payload["messages"][0]["content"] == "Prompt text"
+    assert payload["think"] is False
+    assert payload["keep_alive"] == "15m"
+    assert payload["options"]["temperature"] == 0.1
+    assert payload["options"]["top_k"] == 20
+    assert payload["format"]["type"] == "object"
+
+
+def test_call_llm_merges_openai_compatible_options(monkeypatch) -> None:
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["json"] = json
+        return DummyResponse(
+            {"choices": [{"message": {"content": "Reasoning.\nSCORE: 2"}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    grader = Grader(
+        fetcher=StaticFetcher({}),
+        llm_base_url="https://api.example.com/v1",
+        llm_api_key="test-key",
+        llm_model="gpt-test",
+        provider="openai_compatible",
+        openai_compatible_options={
+            "top_p": 0.9,
+            "provider": {"require_parameters": True},
+        },
+    )
+    grader._call_llm(prompt="Prompt text")
+
+    assert captured["json"]["top_p"] == 0.9
+    assert captured["json"]["provider"]["require_parameters"] is True
+
+
 def test_grader_rejects_negative_temperature() -> None:
     with pytest.raises(ValueError, match="temperature must be greater than or equal to 0"):
         make_grader(temperature=-0.1)
+
+
+def test_grader_rejects_non_positive_max_attempts() -> None:
+    with pytest.raises(ValueError, match="max_attempts must be at least 1"):
+        make_grader(max_attempts=0)
 
 
 def test_call_llm_uses_openai_json_schema_payload(monkeypatch) -> None:
@@ -181,7 +255,7 @@ def test_call_llm_uses_openai_json_schema_payload(monkeypatch) -> None:
             {"choices": [{"message": {"content": '{"score": 2, "reasoning": "Clear fit."}'}}]}
         )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader(response_mode="json_schema")
     response = grader._call_llm(prompt="Prompt text")
@@ -189,6 +263,14 @@ def test_call_llm_uses_openai_json_schema_payload(monkeypatch) -> None:
     assert response == {"score": 2, "reasoning": "Clear fit."}
     assert captured["url"] == "https://api.example.com/v1/chat/completions"
     assert captured["json"]["response_format"]["type"] == "json_schema"
+    assert captured["json"]["response_format"]["json_schema"]["schema"]["required"] == [
+        "score",
+        "reasoning",
+    ]
+    assert "notes" not in captured["json"]["response_format"]["json_schema"]["schema"]["properties"]
+    assert (
+        "refusal" not in captured["json"]["response_format"]["json_schema"]["schema"]["properties"]
+    )
 
 
 def test_call_llm_uses_ollama_native_api_for_structured_output(monkeypatch) -> None:
@@ -202,7 +284,7 @@ def test_call_llm_uses_ollama_native_api_for_structured_output(monkeypatch) -> N
             {"message": {"content": '{"score": 3, "reasoning": "Exact match."}'}}
         )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = Grader(
         fetcher=StaticFetcher({}),
@@ -223,13 +305,42 @@ def test_call_llm_uses_ollama_native_api_for_structured_output(monkeypatch) -> N
     assert captured["json"]["format"]["required"] == ["score", "reasoning"]
 
 
+def test_call_llm_merges_ollama_options(monkeypatch) -> None:
+    captured = {}
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["json"] = json
+        return DummyResponse(
+            {"message": {"content": "Reasoning.\nSCORE: 2"}}
+        )
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    grader = Grader(
+        fetcher=StaticFetcher({}),
+        llm_base_url="http://localhost:11434/v1",
+        llm_api_key=None,
+        llm_model="qwen3.5:9b",
+        provider="ollama",
+        ollama_options={
+            "keep_alive": "15m",
+            "options": {"top_k": 20},
+        },
+    )
+    grader._call_llm(prompt="Prompt text")
+
+    assert captured["json"]["keep_alive"] == "15m"
+    assert captured["json"]["options"]["top_k"] == 20
+
+
 def test_call_llm_includes_response_body_in_provider_errors(monkeypatch) -> None:
     def fake_post(url: str, *, headers, json, timeout):
         del url, headers, json, timeout
         response = ErrorResponse(400, '{"error":"unsupported parameter: response_format"}')
         raise requests.HTTPError("400 Client Error", response=response)
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader(response_mode="json_schema")
 
@@ -243,7 +354,7 @@ def test_call_llm_suggests_text_mode_for_json_schema_400s(monkeypatch) -> None:
         response = ErrorResponse(400, "bad request")
         raise requests.HTTPError("400 Client Error", response=response)
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader(response_mode="json_schema")
 
@@ -263,7 +374,7 @@ def test_grade_returns_scored_results(monkeypatch) -> None:
         del url, headers, json, timeout
         return next(responses)
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     fetcher = StaticFetcher(
         {
@@ -287,6 +398,7 @@ def test_grade_retries_failures_logs_failed_items_and_continues(monkeypatch, tmp
             DummyResponse({"choices": [{"message": {"content": "Missing strict output"}}]}),
             DummyResponse({"choices": [{"message": {"content": "Still wrong"}}]}),
             DummyResponse({"choices": [{"message": {"content": "No score here either"}}]}),
+            DummyResponse({"choices": [{"message": {"content": "Wrong again"}}]}),
             DummyResponse({"choices": [{"message": {"content": "Useful result.\nSCORE: 2"}}]}),
         ]
     )
@@ -295,7 +407,7 @@ def test_grade_retries_failures_logs_failed_items_and_continues(monkeypatch, tmp
         del url, headers, json, timeout
         return next(responses)
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     fetcher = StaticFetcher(
         {
@@ -341,7 +453,7 @@ def test_grade_writes_failures_incrementally(monkeypatch, tmp_path) -> None:
         if item.__class__.__name__ == "GradeFailure":
             seen["payload"] = json.loads(failed_log_path.read_text(encoding="utf-8"))
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
     fetcher = StaticFetcher(
         {
             "vitamin b6": [
@@ -350,7 +462,7 @@ def test_grade_writes_failures_incrementally(monkeypatch, tmp_path) -> None:
             ]
         }
     )
-    grader = make_grader(fetcher=fetcher, max_retries=1)
+    grader = make_grader(fetcher=fetcher, max_attempts=1)
     grader.grade(
         queries=["vitamin b6"],
         failed_log_path=failed_log_path,
@@ -369,7 +481,7 @@ def test_grade_respects_configured_timeout_and_retry_count(monkeypatch, tmp_path
         calls["timeout"] = timeout
         raise RuntimeError("provider down")
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = Grader(
         fetcher=StaticFetcher(
@@ -383,7 +495,7 @@ def test_grade_respects_configured_timeout_and_retry_count(monkeypatch, tmp_path
         llm_api_key="test-key",
         llm_model="gpt-test",
         max_workers=1,
-        max_retries=1,
+        max_attempts=1,
         request_timeout=120.0,
         provider="openai_compatible",
     )
@@ -403,7 +515,7 @@ def test_grade_classifies_timeout_failures(monkeypatch, tmp_path) -> None:
         del url, headers, json, timeout
         raise requests.Timeout("slow")
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader()
     failed_log_path = tmp_path / "failed.json"
@@ -411,6 +523,46 @@ def test_grade_classifies_timeout_failures(monkeypatch, tmp_path) -> None:
 
     payload = json.loads(failed_log_path.read_text(encoding="utf-8"))
     assert payload[0]["failure_type"] == "timeout"
+
+
+def test_grade_supports_prompt_file_contract(monkeypatch, tmp_path) -> None:
+    captured = {}
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("Query: {query}\nResult:\n{result_fields}", encoding="utf-8")
+
+    def fake_post(url: str, *, headers, json, timeout):
+        del url, headers, timeout
+        captured["prompt"] = json["messages"][0]["content"]
+        return DummyResponse(
+            {"choices": [{"message": {"content": "Strong match.\nSCORE: 3"}}]}
+        )
+
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
+
+    grader = Grader(
+        fetcher=StaticFetcher(
+            {
+                "vitamin b6": [
+                    SearchResult(
+                        doc_id="123",
+                        rank=1,
+                        fields={"title": "Vitamin B6 100mg"},
+                    )
+                ]
+            }
+        ),
+        llm_base_url="https://api.example.com/v1",
+        llm_api_key="test-key",
+        llm_model="gpt-test",
+        provider="openai_compatible",
+        prompt_template=str(prompt_file),
+        prompt_contract="prompt_file",
+    )
+    grader.grade(queries=["vitamin b6"], failed_log_path=None)
+
+    assert "Query: vitamin b6" in captured["prompt"]
+    assert "title: Vitamin B6 100mg" in captured["prompt"]
+    assert "Use this scale:" not in captured["prompt"]
 
 
 def test_grade_collects_pass_scores(monkeypatch) -> None:
@@ -426,7 +578,7 @@ def test_grade_collects_pass_scores(monkeypatch) -> None:
         del url, headers, json, timeout
         return next(responses)
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader(passes=3)
     results = grader.grade(queries=["vitamin b6"], failed_log_path=None)
@@ -461,7 +613,7 @@ def test_grade_skips_completed_pairs_when_resuming(monkeypatch, tmp_path) -> Non
             {"choices": [{"message": {"content": "Needs grading.\nSCORE: 2"}}]}
         )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     fetcher = StaticFetcher(
         {
@@ -493,7 +645,7 @@ def test_grade_writes_incremental_json_output(monkeypatch, tmp_path) -> None:
             {"choices": [{"message": {"content": "Direct match.\nSCORE: 3"}}]}
         )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader()
     grader.grade(
@@ -507,8 +659,8 @@ def test_grade_writes_incremental_json_output(monkeypatch, tmp_path) -> None:
     assert payload[0]["doc_id"] == "123"
 
 
-def test_grade_writes_incremental_csv_output(monkeypatch, tmp_path) -> None:
-    output_path = tmp_path / "judgments.csv"
+def test_grade_rejects_non_json_runtime_output_format(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "judgments.json"
 
     def fake_post(url: str, *, headers, json, timeout):
         del url, headers, json, timeout
@@ -516,17 +668,16 @@ def test_grade_writes_incremental_csv_output(monkeypatch, tmp_path) -> None:
             {"choices": [{"message": {"content": "Direct match.\nSCORE: 3"}}]}
         )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader()
-    grader.grade(
-        queries=["vitamin b6"],
-        output_path=output_path,
-        output_format="quepid_csv",
-        failed_log_path=None,
-    )
-
-    assert "query,docid,rating" in output_path.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="output_format must be 'json' or None"):
+        grader.grade(
+            queries=["vitamin b6"],
+            output_path=output_path,
+            output_format="csv",
+            failed_log_path=None,
+        )
 
 
 def test_grade_emits_progress_events_for_start_skip_and_finish(monkeypatch, tmp_path) -> None:
@@ -554,7 +705,7 @@ def test_grade_emits_progress_events_for_start_skip_and_finish(monkeypatch, tmp_
             {"choices": [{"message": {"content": "Needs grading.\nSCORE: 2"}}]}
         )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     fetcher = StaticFetcher(
         {
@@ -587,7 +738,7 @@ def test_grade_emits_failure_progress_event(monkeypatch) -> None:
         del url, headers, json, timeout
         return DummyResponse({"choices": [{"message": {"content": "Missing score"}}]})
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader()
     grader.grade(
@@ -606,7 +757,7 @@ def test_grade_parses_structured_response_end_to_end(monkeypatch) -> None:
             {"choices": [{"message": {"content": '{"score": 3, "reasoning": "Exact fit."}'}}]}
         )
 
-    monkeypatch.setattr("judgement_ai.grader.requests.post", fake_post)
+    monkeypatch.setattr("judgement_ai.grading.providers.requests.post", fake_post)
 
     grader = make_grader(response_mode="json_schema")
     results = grader.grade(queries=["vitamin b6"], failed_log_path=None)

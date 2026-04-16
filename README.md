@@ -9,7 +9,7 @@ It is built for workflows like:
 - offline result review
 - AI-assisted scoring pipelines
 
-The core idea is simple:
+The core idea:
 
 1. load queries
 2. fetch or read candidate results
@@ -18,21 +18,10 @@ The core idea is simple:
 
 ## What It Does
 
-- grades search results with an OpenAI-compatible or Ollama-backed model
-- supports Elasticsearch and pre-fetched JSON input
-- writes Quepid-compatible CSV or detailed JSON
-- runs concurrently for practical throughput
-- writes incrementally so long runs are not lost
-- supports resume and sidecar failure logs
-
-## What It Does Not Do
-
-- compute IR metrics like NDCG or MRR
-- optimize search queries
-- provide a web UI
-- train or fine-tune models
-
-`judgement-ai` is the grading step, not the whole evaluation stack.
+- grades `(query, document)` pairs with an OpenAI-compatible or Ollama-backed model
+- supports file-backed and in-memory result inputs
+- writes canonical raw judgments JSON, with optional CSV export
+- supports preview, retries, resume, and sidecar failure logs
 
 ## Install
 
@@ -42,16 +31,10 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-For local development:
+For local development (pytest and ruff):
 
 ```bash
 pip install -e ".[dev]"
-```
-
-For optional validation tooling:
-
-```bash
-pip install -e ".[dev,validate]"
 ```
 
 ## Quickstart
@@ -60,31 +43,23 @@ pip install -e ".[dev,validate]"
 
 ```bash
 judgement-ai grade \
-  --queries queries.txt \
-  --results-file results.json \
+  --queries examples/queries.txt \
+  --results-file examples/results.json \
   --model gpt-5.1 \
   --api-key "$OPENAI_API_KEY" \
   --output judgments.json
 ```
 
-### CLI with Elasticsearch
-
-```bash
-judgement-ai grade \
-  --queries queries.txt \
-  --elasticsearch https://my-elastic/catalog \
-  --model gpt-5.1 \
-  --api-key "$OPENAI_API_KEY" \
-  --top-n 24 \
-  --output judgments.csv
-```
+If you omit `--output`, the CLI creates a safe local raw-judgments path automatically.
+When `judgments.json` already exists, it falls back to a timestamped path like
+`judgments-20260407-153000.json` instead of overwriting silently.
 
 ### Local Ollama example
 
 ```bash
 judgement-ai grade \
-  --queries queries.txt \
-  --results-file results.json \
+  --queries examples/queries.txt \
+  --results-file examples/results.json \
   --base-url http://localhost:11434/v1 \
   --provider ollama \
   --model qwen3.5:9b \
@@ -93,202 +68,61 @@ judgement-ai grade \
   --output judgments.json
 ```
 
-## Library Example
-
-```python
-from judgement_ai import FileResultsFetcher, Grader
-
-fetcher = FileResultsFetcher(path="results.json")
-
-grader = Grader(
-    fetcher=fetcher,
-    llm_base_url="https://api.openai.com/v1",
-    llm_api_key="YOUR_API_KEY",
-    llm_model="gpt-5.1",
-    temperature=0,
-    response_mode="json_schema",
-    max_retries=1,
-)
-
-results = grader.grade(
-    queries=["vitamin b6", "magnesium for sleep"],
-    output_path="judgments.json",
-    output_format="json",
-)
-
-print(len(results))
-```
-
-## Inputs
-
-### Query file
-
-Query files can be:
-
-- plain text: one query per line
-- CSV: first column or `query` column
-
-Example:
-
-```text
-vitamin b6
-tired all the time
-magnesium for sleep
-```
-
-### Pre-fetched results file
-
-`results.json` should look like:
-
-```json
-{
-  "vitamin b6": [
-    {
-      "doc_id": "123",
-      "rank": 1,
-      "fields": {
-        "title": "Vitamin B6 100mg",
-        "description": "Supports energy metabolism"
-      }
-    }
-  ]
-}
-```
-
-This shape is intentionally simple and fixed for v1:
-
-- top-level keys are query strings
-- each value is a list of candidate results for that query
-- `doc_id`, `rank`, and `fields` are the supported fields the loader cares about
-
-Important behavior:
-
-- for file-backed grading, the queries you pass to `grade(...)` must match those top-level keys
-- the grader uses `doc_id`, `rank`, and `fields`
-- additional top-level attributes are ignored
-- if you want extra document metadata to appear in the prompt, put it inside `fields`
-
-For example, this will be visible to the model:
-
-```json
-{
-  "vitamin b6": [
-    {
-      "doc_id": "123",
-      "rank": 1,
-      "fields": {
-        "title": "Vitamin B6 100mg",
-        "description": "Supports energy metabolism",
-        "brand": "Example Labs"
-      }
-    }
-  ]
-}
-```
-
-## Outputs
-
-### Quepid CSV
-
-```csv
-query,docid,rating
-vitamin b6,123,3
-magnesium for sleep,456,2
-```
-
-### JSON
-
-```json
-[
-  {
-    "query": "vitamin b6",
-    "doc_id": "123",
-    "score": 3,
-    "reasoning": "Direct match for the product intent.",
-    "rank": 1
-  }
-]
-```
-
-## Resume And Failure Handling
-
-Long runs are meant to be recoverable.
-
-- successful results are written incrementally
-- failed items are written to a sidecar `*-failures.json`
-- `--resume` skips already completed `(query, doc_id)` pairs
-
-Example:
+### Preview prompt and request shape
 
 ```bash
-judgement-ai grade \
-  --queries queries.txt \
-  --results-file results.json \
-  --model gpt-5.1 \
-  --api-key "$OPENAI_API_KEY" \
-  --output judgments.json \
-  --resume
+judgement-ai preview \
+  --config judgement-ai.yaml
 ```
 
-If the output file already exists and you are not resuming, the CLI will ask before overwriting it.
-Use `--force` to overwrite without a prompt.
+`preview` is read-only. It uses built-in placeholder query and result data so you can inspect the
+resolved prompt mode, provider, response mode, rendered prompt, and outgoing request payload shape
+without configuring `queries` or `search.results_file`, and without spending provider time.
 
-## Configuration
+## Capabilities
 
-An example config file is included at [judgement-ai.yaml.example](judgement-ai.yaml.example).
+The current shipped surface includes:
 
-For a fuller configuration reference, see [configuration.md](docs/configuration.md).
+- `judgement-ai grade`
+- `judgement-ai preview`
+- `judgement-ai export-csv`
+- structured prompt mode and full `prompt_file` mode
+- OpenAI-compatible and Ollama provider paths
+- canonical raw judgments JSON, optional CSV export, retries, resume, and failure logs
 
-## Providers
+Config-driven runs can be one command when the config includes queries, search input, and output paths:
 
-The tool supports:
+```bash
+judgement-ai grade --config judgement-ai.yaml
+```
 
-- OpenAI-compatible endpoints via `base_url + api_key`
-- Ollama locally
+## Where To Look Next
 
-Behavior notes:
-
-- `temperature` defaults to `0`, but is configurable through the library, CLI, and config file
-- `json_schema` mode is supported when the provider and model support structured output
-- some routed providers may require `text` mode even when the underlying model supports structured output elsewhere
-
-For CLI runs, use `--temperature`. For config-driven runs, set `grading.temperature`.
-
-Prompt and grading tunings such as `prompt_file`, `response_mode`, temperature, retries, and timeouts are documented in [configuration.md](docs/configuration.md).
+- [examples/README.md](examples/README.md): runnable examples for CLI and library usage
+- [docs/judgement-ai.yaml.example](docs/judgement-ai.yaml.example): minimal config starting point
+- [docs/configuration.md](docs/configuration.md): config and behavior reference
 
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
 
-## Optional Validation
-
-The repo includes optional validation tooling against Amazon ESCI under [`validate/`](validate), but validation is not required to use the grading pipeline.
-
-If you want to run the benchmark workflow, start with [validation-runbook.md](docs/validation-runbook.md).
-
 ## Documentation
 
 User-facing docs:
 
+- [README.md](README.md)
+- [examples/README.md](examples/README.md)
 - [configuration.md](docs/configuration.md)
-- [validation-runbook.md](docs/validation-runbook.md)
-- [amazon-benchmark.md](docs/amazon-benchmark.md)
 
-Contributor-facing docs:
+Agent facing docs:
 
-- [AGENT.md](AGENT.md)
-- [PIPELINE.md](PIPELINE.md)
+- [AGENT.md](docs/AGENT.md)
+- [PIPELINE.md](docs/PIPELINE.md)
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-pytest
-ruff check .
+python3 -m pytest
+python3 -m ruff check .
 ```
-
-## Status
-
-The core library and CLI are implemented and usable.
-
-Validation tooling is present but benchmark claims are intentionally conservative until published results are finalized.
