@@ -130,7 +130,5 @@ python3 -m pytest
 python3 -m ruff check .
 ```
 
----
-
 ## judgement-ai v0.2.0 Introduction Video
 [![Demo Video](https://img.youtube.com/vi/1cce_h1JIyQ/0.jpg)](https://www.youtube.com/watch?v=1cce_h1JIyQ)
